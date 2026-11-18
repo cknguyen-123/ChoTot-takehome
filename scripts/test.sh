@@ -8,7 +8,9 @@ set -eu
 PROJECT="listing-moderation-test-$$"
 
 cleanup() {
-  docker compose -p "$PROJECT" --profile test down -v --remove-orphans >/dev/null 2>&1 || true
+  # --rmi local also deletes the test image built for this run (its name is unique
+  # per run, so without this every `make test` would leave one behind).
+  docker compose -p "$PROJECT" --profile test down -v --remove-orphans --rmi local >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT

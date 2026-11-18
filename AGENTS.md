@@ -247,6 +247,10 @@ Do not duplicate content across files; link instead.
   state = 'running'` (fencing). Without it a stale worker can reset a reclaimed job.
 - Concurrency tests that pass are not proof: remove the lock or guard and check that a
   test fails (done for the seller lock and the `status = 'pending'` guard in Phase 5).
+- **(Phase 7, real)** `scripts/test.sh` used a unique project name per run but its
+  cleanup did not remove the built image, so every `make test` left a 276 MB image
+  behind (20 found). Fix: `down --rmi local`. When checking "cleans up", look at
+  images too, not only containers and volumes.
 - _(add real incidents here as they happen, with one line on the fix)_
 
 ## 11. How to work with the user
