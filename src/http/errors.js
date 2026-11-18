@@ -34,6 +34,14 @@ function bodyParserError(err) {
   }
 }
 
+const CLIENT_ERROR_CODES = {
+  400: 'invalid_request',
+  404: 'not_found',
+  405: 'method_not_allowed',
+  413: 'payload_too_large',
+  415: 'unsupported_media_type',
+};
+
 export function createErrorHandler(logger) {
   // Express recognises error handlers by their four parameters.
   return function errorHandler(err, req, res, next) {
@@ -52,6 +60,17 @@ export function createErrorHandler(logger) {
     const parsed = bodyParserError(err);
     if (parsed) {
       sendError(res, parsed.status, parsed.code, parsed.message);
+      return;
+    }
+
+    // Other client errors raised by Express or its libraries (e.g. a malformed
+    // percent-encoding in the URL sets status 400). Keep their status, but use a
+    // generic message: library messages are not part of our contract. Logged at
+    // debug level only, since a bad request is not a server problem.
+    const status = err?.status ?? err?.statusCode;
+    if (Number.isInteger(status) && status >= 400 && status < 500) {
+      logger.debug('client error from framework', { err, method: req.method, status });
+      sendError(res, status, CLIENT_ERROR_CODES[status] ?? 'bad_request', 'The request could not be processed');
       return;
     }
 

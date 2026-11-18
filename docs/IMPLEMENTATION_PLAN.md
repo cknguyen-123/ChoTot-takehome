@@ -99,12 +99,12 @@ submission went `needs_human` → approved by `m-1` (200) → second moderator 4
 
 ## Phase 7: Integration and Finalization
 
-- [ ] Task 7.1: Integration testing
-- [ ] Task 7.2: Error handling review
+- [x] Task 7.1: Integration testing — every AGENTS §9 case was already covered; added `test/error-paths.test.js` (database down on every endpoint → clean 500, nothing leaked, cause logged). 180/180 pass.
+- [x] Task 7.2: Error handling review — found and fixed: a malformed URL (`/v1/listings/%E0%A4%A`) returned 500 and was logged as an unhandled error; framework 4xx errors now keep their status with a generic message. Worker and API behaviour during a database outage documented (ARCHITECTURE §8).
 - [x] Task 7.3: Docker review — cold-machine timing under 180 s, image size (initial setup is Task 1.7)
   - Cold `make run` (base images removed, fresh empty BuildKit builder): first `POST /v1/listings` answered **44 s** after start, including pulling Node and Postgres and `npm ci`.
   - Runtime image 264 MB (Node 24 Alpine base; our dependencies 17 MB, code + seed < 200 KB). API and worker share the image layers.
   - Killing `make run` removes all three containers (db, api, worker) within 2 s (watchdog path; on Windows the kill is a hard kill).
   - Fixed: `make test` left its 276 MB test image behind after every run; cleanup now uses `down --rmi local`. Verified 0 images/containers/volumes left after a run.
-- [ ] Task 7.4: Documentation
-- [ ] Task 7.5: Final end-to-end testing
+- [x] Task 7.4: Documentation — all 25 assumptions checked for the four fields; ARCHITECTURE §8 (worker down, database outage) and §9 (items postponed during the build); README limitations; the failed-jobs `psql` command verified against a real database.
+- [x] Task 7.5: Final end-to-end testing — fresh clone of `57bf1ce` into an empty folder: `make test` 174/174, `make run` ready in 10 s, submit → `needs_human` → moderator 200; stopping left no containers. **Repeat once after the final commit, and once more from GitHub after pushing.**

@@ -100,11 +100,15 @@ any test fails. Each run uses its own Compose project, so it never touches a run
   `hang gia` (A12).
 - Moderator identity (`moderator_id`) is trusted as sent; there is no
   authentication.
+- Trusted sellers (R4) bypass the duplicate check, so a trusted seller's identical
+  listings are all published (A2).
+- Only the current decision is stored; a human decision keeps the escalation reasons
+  that led to it, but there is no full decision history (A23).
 - Failed moderation jobs are visible by querying the database, not through an API
   (A7, ARCHITECTURE.md §6.1). With `make run` going:
 
   ```sh
-  docker compose -p listing-moderation-8080 exec db psql -U moderation -c     "SELECT listing_id, attempts, last_error, updated_at FROM moderation_jobs WHERE state = 'failed'"
+  docker compose -p listing-moderation-8080 exec db psql -U moderation -c "SELECT listing_id, attempts, last_error, updated_at FROM moderation_jobs WHERE state = 'failed'"
   ```
 
   To retry one after fixing the cause:

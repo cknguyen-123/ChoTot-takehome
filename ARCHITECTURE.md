@@ -240,6 +240,8 @@ through job state (§6), not by taking the API out of rotation.
 | API restart | Everything | Clients retry; idempotency returns the original listing. |
 | Full restart (`make run` again) | Everything in the Postgres named volume | The worker resumes queued and expired jobs. |
 | Volume removed (`make clean`) | Nothing | Fresh database; seed reloaded. |
+| Worker down (no worker running) | Everything | The API keeps accepting listings (202); they wait as `queued` jobs and are decided when a worker starts. `/readyz` stays 200: the API itself can do its job. |
+| Database outage | Everything already committed | API requests wait at most 5 s for a connection, then return `500 internal_error` (details only in logs); `/readyz` turns 503. Workers log the error and keep polling; a job interrupted mid-attempt is reclaimed after its lease. One attempt may be used up per interrupted job. |
 
 **Supported topology:** one PostgreSQL primary; any number of API instances; any number
 of worker instances. All coordination happens in Postgres, so adding instances needs no
@@ -260,3 +262,13 @@ published on host port `${PORT:-8080}`.
    throughput becomes the bottleneck. The outbox keeps the "listing + job in one
    transaction" guarantee.
 7. **Connection pooling** (PgBouncer) once API and worker instances multiply.
+8. **Push instead of poll:** Postgres `LISTEN/NOTIFY` from the API to wake workers at
+   once, keeping polling as the fallback. Polling every 500 ms is fine at this scale.
+9. **Migrations as a deploy step**, run once before new instances start, instead of by
+   every process at startup. Startup migration is convenient for `make run`, but in
+   production it couples rollouts to schema changes.
+10. **Restart policies and health-based routing** from an orchestrator. `make run`
+    deliberately stops everything if one container exits, which is right for a local
+    run and wrong for production.
+11. **Retention for `moderation_jobs`**: `done` rows are only bookkeeping and can be
+    deleted after a while; `failed` rows stay until handled.

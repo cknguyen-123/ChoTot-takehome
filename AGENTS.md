@@ -27,7 +27,7 @@ against rules R1–R5, and lets a human moderator resolve listings that need rev
   `src/moderation/decide.js` the pure rules, `src/services/` use cases, `src/worker.js` +
   `src/worker/loop.js` the worker process, `scripts/` the `make` helpers.
   `ARCHITECTURE.md` and `ASSUMPTIONS.md` sit at the repo root (brief §4 lists them
-  there); `docs/` holds only the plan and context notes.
+  there); `docs/` holds only the implementation plan.
 
 ## 2. Sources of truth (in priority order)
 
@@ -251,6 +251,10 @@ Do not duplicate content across files; link instead.
   cleanup did not remove the built image, so every `make test` left a 276 MB image
   behind (20 found). Fix: `down --rmi local`. When checking "cleans up", look at
   images too, not only containers and volumes.
+- **(Phase 7, real)** The error handler only knew `AppError` and body-parser errors, so
+  framework client errors (e.g. a malformed `%`-encoding in the URL, status 400) became
+  500s logged as unhandled. Fix: keep any 4xx `status` from the framework, with a
+  generic message. Found by writing the error-path test first.
 - _(add real incidents here as they happen, with one line on the fix)_
 
 ## 11. How to work with the user
