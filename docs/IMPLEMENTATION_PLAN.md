@@ -37,11 +37,17 @@ Confirmed by the developer: `make test` and `make run` (Ctrl-C teardown included
 
 ## Phase 2: Database
 
-- [ ] Task 2.1: Design database schema
-- [ ] Task 2.2: Configure PostgreSQL connection
-- [ ] Task 2.3: Create database migrations
-- [ ] Task 2.4: Implement listing repository
-- [ ] Task 2.5: Test database operations
+Decisions: `pg` with plain SQL (no ORM); **node-pg-migrate** for migrations (developer's
+choice over a hand-written runner, see AI-NOTES.md); UUID ids from `gen_random_uuid()`.
+Verified: `make test` → 50/50 pass against a throwaway Postgres; `make run` applies the
+migration on first start, skips it on restart, `/readyz` reports all four checks ok.
+
+- [x] Task 2.1: Design database schema — `src/db/migrations/1763424000000_init.sql` (constraints in the DB)
+- [x] Task 2.2: Configure PostgreSQL connection — `src/db/pool.js` (bigint → number, transaction helper, closed on shutdown)
+- [x] Task 2.3: Create database migrations — node-pg-migrate at startup, advisory lock in `wait` mode
+- [x] Task 2.4: Implement listing repository — insert listing + job in one transaction (`ON CONFLICT`), find, list
+- [x] Task 2.5: Test database operations — migrations (incl. concurrent start), schema constraints, repository (incl. 20 concurrent same-key inserts), seed validation, `/readyz` DB checks
+- [x] Task 2.6: Seed loading and validation at startup (`src/reference/seed.js`)
 
 ## Phase 3: Listing Management
 

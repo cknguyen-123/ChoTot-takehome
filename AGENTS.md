@@ -21,7 +21,9 @@ against rules R1–R5, and lets a human moderator resolve listings that need rev
   test framework dependency. Tests run inside a container (see §3).
 - **Layout:** `src/app.js` builds the app (no listening, no signals; used by tests),
   `src/server.js` is the process entry point, `src/config.js` reads env once,
-  `src/http/` holds error and health handlers, `scripts/` holds the `make` helpers.
+  `src/http/` holds error and health handlers, `src/db/` the pool, migrations
+  (node-pg-migrate, plain SQL up/down files) and DB readiness checks,
+  `src/repositories/` all SQL, `src/reference/` the seed loader, `scripts/` the `make` helpers.
   `ARCHITECTURE.md` and `ASSUMPTIONS.md` sit at the repo root (brief §4 lists them
   there); `docs/` holds only the plan and context notes.
 
@@ -220,6 +222,12 @@ Do not duplicate content across files; link instead.
 - **(Phase 1 review, real)** Dockerfile fell back to `npm install` when the lockfile
   was missing, so builds were not reproducible and nobody noticed. The lockfile is now
   required (`npm ci`); regenerate with `make lock`.
+- Never edit a migration that has been applied: node-pg-migrate does not detect it and
+  databases silently drift. Add a new `<timestamp>_<name>.sql` instead.
+- node-pg-migrate's default `advisoryLockMode` is `fail`: a second process starting at
+  the same time crashes. We pass `wait`; keep it.
+- `pg` returns `bigint` as a string. Our pool parses it to a number (safe because
+  `price_vnd` is capped at `Number.MAX_SAFE_INTEGER` in validation — Phase 3 must do that).
 - _(add real incidents here as they happen, with one line on the fix)_
 
 ## 11. How to work with the user

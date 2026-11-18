@@ -23,7 +23,7 @@ result. Listings escalated to `needs_human` are resolved through the moderator e
         ▲  reads listing + decision                  │    PostgreSQL     │
         └────────────────────────────────────────────│ listings          │
                                                      │ moderation_jobs   │
-┌──────────────────┐  claim job (SKIP LOCKED+lease)  │ schema_migrations │
+┌──────────────────┐  claim job (SKIP LOCKED+lease)  │ pgmigrations      │
 │  Worker (Node)   │◄────────────────────────────────│                   │
 │ rules → decide   │  commit result (conditional     └──────────────────┘
 └──────────────────┘  UPDATE … WHERE status='pending')
@@ -78,6 +78,20 @@ can be unit-tested without a database or HTTP server.
 
 **Express on Node.js** — familiar, small, and enough for six endpoints.
 
+**`pg` (node-postgres) with plain SQL, no ORM.** The guarantees in §6 depend on exact
+statements (`INSERT … ON CONFLICT`, `UPDATE … WHERE status = 'pending'`,
+`FOR UPDATE SKIP LOCKED`). Writing them by hand keeps them visible and reviewable; an
+ORM would hide them and add build time. All SQL lives in `src/repositories/`.
+
+**node-pg-migrate for schema migrations.** Migrations are plain SQL files with an up and
+a down section, applied automatically at startup and recorded in `pgmigrations`. Chosen
+over a small hand-written runner because this is built as a production service: a
+maintained tool brings down-migrations for rollbacks, ordering checks, and handling of
+statements that cannot run in a transaction, which a long-lived schema will need. It
+takes a Postgres advisory lock (mode `wait`), so API and worker processes starting
+together apply each migration exactly once. Trade-off: one more dependency, and it does
+not detect edits to an already-applied file; the rule is "never edit, add a new one".
+
 **API and worker as separate processes from the same image.** They scale and restart
 independently, and restart behaviour (§7) is easy to reason about and test. The worker
 loop can also be started in-process for integration tests.
@@ -86,36 +100,20 @@ loop can also be started in-process for integration tests.
 request (422 checks) and every evaluation. Each process loads and validates it at
 startup and refuses to become ready if it is invalid.
 
-## 4. Data model (sketch)
+## 4. Data model
 
-```sql
-listings (
-  id               uuid primary key,
-  seller_id        text   not null,
-  title            text   not null,
-  description      text   not null,
-  price_vnd        bigint not null check (price_vnd >= 0),
-  category_id      text   not null,
-  status           text   not null,            -- API Status enum, check constraint
-  decision         jsonb,                       -- {outcome, reasons[]}; null while pending
-  decided_at       timestamptz,
-  decided_by       text,                        -- moderator_id for human decisions
-  created_at       timestamptz not null default now(),
-  submission_key   text unique,                 -- Idempotency-Key header (A8)
-  request_hash     text,                        -- hash of normalised body → 200 vs 409
-  dedup_key        text                         -- normalised fields for R3 (A3)
-)
--- index (seller_id, dedup_key) for R3; index (created_at desc) for the list endpoint
+The schema is defined in one place, the migration
+[`src/db/migrations/1763424000000_init.sql`](src/db/migrations/1763424000000_init.sql).
+In short:
 
-moderation_jobs (
-  listing_id   uuid primary key references listings(id),
-  state        text not null,          -- queued | running | done | failed
-  attempts     int  not null default 0,
-  run_after    timestamptz not null default now(),
-  lease_until  timestamptz,
-  last_error   text
-)
-```
+| Table | Purpose | Key constraints |
+|-------|---------|-----------------|
+| `listings` | One row per accepted submission; `status` + `decision` are the committed moderation result | `UNIQUE (submission_key)` (A8); `status` limited to the API enum; title/description/price limits from the spec; **`decision_matches_status`**: `pending` ⇔ no decision and no `decided_at` |
+| `moderation_jobs` | Durable job record per listing (state `queued → running → done`, or `failed`) | One job per listing (PK = `listing_id`); `running` requires `lease_until` |
+| `pgmigrations` | Applied migrations (managed by node-pg-migrate) | — |
+
+Indexes cover the list endpoint (newest first, by seller or status), the R3 lookup on
+**active** listings only (partial index, A4), and the worker's claim queries.
 
 `status` and `decision` are always written in the **same UPDATE**, so they cannot
 disagree.
@@ -197,7 +195,7 @@ stores everything the API would expose, so adding it later needs no schema chang
 | Endpoint | Reports | Why |
 |----------|---------|-----|
 | `GET /livez` | `200 {"status":"ok"}` whenever the process can serve HTTP. **No dependency checks.** | A database outage must not make the orchestrator restart healthy API processes; restarting would not fix it. |
-| `GET /readyz` | `200` only if: seed data loaded and valid, DB answers `SELECT 1` within a short timeout, migrations are at the expected version. Otherwise `503 {"status":"unavailable", "checks":{…}}`. | Traffic should only be routed to an instance that can actually do its job. |
+| `GET /readyz` | `200` only if every check passes, each within `READINESS_CHECK_TIMEOUT_MS` (2 s): `accepting_traffic` (not shutting down), `seed` (loaded and valid; the process does not start otherwise), `database` (answers `SELECT 1`), `migrations` (every migration file in this build is recorded in `pgmigrations`). Otherwise `503 {"status":"unavailable","checks":{…}}`; check names only, details go to the logs. | Traffic should only be routed to an instance that can actually do its job. |
 
 Worker health is not part of the API probes. A stuck or failed backlog is reported
 through job state (§6), not by taking the API out of rotation.

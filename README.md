@@ -4,8 +4,8 @@ An HTTP service that accepts classified listings, moderates them asynchronously
 against rules R1–R5, and lets a human moderator resolve listings that need review.
 Node.js 24 + Express 5, PostgreSQL 17, Docker Compose.
 
-> **Status:** Phase 1 (walking skeleton). The service starts, serves `/livez` and
-> `/readyz`, and returns errors in the API shape. The `/v1/listings` endpoints come
+> **Status:** Phase 2 (database). The service starts, applies migrations, serves
+> `/livez` and `/readyz`, and returns errors in the API shape. The `/v1/listings` endpoints come
 > in later phases; see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## Prerequisites
@@ -26,7 +26,7 @@ runs; `make clean` deletes it.
 
 ```sh
 curl -s localhost:8080/livez    # {"status":"ok"}
-curl -s localhost:8080/readyz   # {"status":"ok","checks":{...}}
+curl -s localhost:8080/readyz   # {"status":"ok","checks":{"seed":"ok","database":"ok","migrations":"ok",...}}
 ```
 
 ## Test
@@ -35,8 +35,9 @@ curl -s localhost:8080/readyz   # {"status":"ok","checks":{...}}
 make test
 ```
 
-Needs no running service. It builds a test image, runs the suite with Node's built-in
-test runner inside a container, removes everything it created, and exits non-zero if
+Needs no running service. It builds a test image, starts a throwaway in-memory
+Postgres, runs the suite with Node's built-in test runner inside a container (each
+database test file gets its own fresh database), removes everything it created, and exits non-zero if
 any test fails. Each run uses its own Compose project, so it never touches a running
 `make run`.
 
@@ -62,7 +63,7 @@ any test fails. Each run uses its own Compose project, so it never touches a run
 
 ## Known limitations
 
-- Phase 1 only: listing submission, moderation worker and human decisions are not
+- Phase 2 only: listing submission, moderation worker and human decisions are not
   implemented yet.
 - `POST /v1/listings` requires an `Idempotency-Key` header (A8).
 - Nothing moves listings to `expired` (A11).

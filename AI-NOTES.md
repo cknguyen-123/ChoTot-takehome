@@ -45,6 +45,18 @@ widening it by normalisation risks rejecting innocent listings whose words diffe
 only by diacritics. Accented forms can be added to the keyword list as data. The
 known cost (accented spellings slip through) is written down in A12.
 
+**Where I disagreed (migration tool, Phase 2).** The model recommended a ~80-line
+hand-written migration runner (no dependency, every line explainable in review) over
+`node-pg-migrate`. It even wrote the runner. After reading it and asking what
+migrations are for and how the library differs, I chose **node-pg-migrate**: this
+service is meant to go to production and live for years, not be a short-lived
+exercise. A maintained tool gives down-migrations for rollbacks, ordering checks and
+edge cases (e.g. `CREATE INDEX CONCURRENTLY`) that a home-grown runner would have to
+grow into. The model's runner was deleted; the schema SQL was kept and converted to
+the library's up/down format.
+
 ## A path abandoned
 
-- _(fill in when it happens)_
+- **Hand-written migration runner** (Phase 2): built, reviewed, then replaced by
+  node-pg-migrate within the same session (see above). What made me stop: thinking
+  about the service's lifetime rather than the exercise's.

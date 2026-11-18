@@ -43,7 +43,28 @@ services:
     init: true
     environment:
       LOG_LEVEL: error
-    # Phase 2 adds: depends_on db (a throwaway database for integration tests).
+      # Admin connection; each test file creates and drops its own database here.
+      TEST_DATABASE_URL: postgres://moderation:moderation@test-db:5432/postgres
+    depends_on:
+      test-db:
+        condition: service_healthy
+
+  # Throwaway Postgres for `make test`: data lives in memory (tmpfs) and is gone
+  # when scripts/test.sh runs `down`. Never shares anything with `db`.
+  test-db:
+    profiles: ["test"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: moderation
+      POSTGRES_PASSWORD: moderation
+      POSTGRES_DB: moderation
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moderation -d moderation"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
 
 volumes:
   pgdata:

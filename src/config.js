@@ -32,5 +32,9 @@ export function loadConfig(env = process.env) {
     shutdownTimeoutMs: readInt(env, 'SHUTDOWN_TIMEOUT_MS', 10_000, { min: 0, max: 120_000 }),
     // Upper bound for each readiness check, so /readyz never hangs.
     readinessCheckTimeoutMs: readInt(env, 'READINESS_CHECK_TIMEOUT_MS', 2_000, { min: 1, max: 30_000 }),
+    // docker-compose.yml sets this for the api container; the default suits running
+    // Node directly against a local Postgres.
+    databaseUrl: env.DATABASE_URL || 'postgres://moderation:moderation@localhost:5432/moderation',
+    dbPoolMax: readInt(env, 'DB_POOL_MAX', 10, { min: 1, max: 100 }),
   });
 }

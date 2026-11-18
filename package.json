@@ -12,6 +12,8 @@
     "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.1"
   }
 }
