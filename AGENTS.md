@@ -149,7 +149,8 @@ by the **database**, not by checks in application memory.
 6. **R3 under concurrency.** Two identical listings submitted at once must not both be
    approved, and must not reject each other. Define the tie-break (see ASSUMPTIONS) and
    enforce it in a transaction or with a lock, not by an unguarded read.
-7. **Rules are pure.** Each rule is a function `(listing, context) → Reason | null` with
+7. **Rules are pure.** Each rule is a function `(listing, context) → Reason[]` (empty when
+   it does not fire; R1 returns one Reason per matched term, A20) with
    no I/O. Data it needs (seller, category median, existing listings) is loaded by the
    caller. This keeps rules unit-testable and lets the decision function be one place.
 
@@ -229,6 +230,12 @@ Do not duplicate content across files; link instead.
   the same time crashes. We pass `wait`; keep it.
 - `pg` returns `bigint` as a string. Our pool parses it to a number (safe because
   `price_vnd` is capped at `Number.MAX_SAFE_INTEGER` in validation — Phase 3 must do that).
+- **(Phase 4, real)** A test meant to prove Unicode boundaries used `'fakế'`, which does
+  not contain "fake" at all, so it passed with the naive `` too. Caught by running the
+  naive pattern against the test inputs. Rule: for a boundary test, check that the
+  *wrong* implementation fails it.
+- Only the rules that decided the outcome go in `reasons` (A18); do not add overridden
+  rules "for completeness".
 - _(add real incidents here as they happen, with one line on the fix)_
 
 ## 11. How to work with the user

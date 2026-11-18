@@ -328,3 +328,63 @@ A bounded retry strategy may stop retrying a job that could eventually succeed. 
 **Rationale:** The response should be true at the time it is sent. Returning `pending` for a published listing would mislead a client that uses the replay to check progress. The `id`, which is what makes the replay idempotent, is always the original one.
 
 **Cost of being wrong:** A client (or test) expecting a byte-identical replay of the first response would see a different `status` once moderation has run. Returning the stored first response instead is a small change in the service.
+
+---
+
+## A18 — Which reasons a decision reports
+
+**Ambiguity:** The brief says `GET /v1/listings/{id}` "must report which rules fired and why", and A5 says the engine "records their results". When several rules fire (e.g. a banned term *and* an unusual price), it is not said whether rules that did not determine the outcome are reported.
+
+**Decision:** A decision reports only the rules that **determined its outcome**. Where several rules lead to the same outcome they are all reported: every matched banned term for an R1 rejection, and both R2 and R5 when both escalate. Rules overridden by a higher-precedence rule are not listed (e.g. a listing rejected by R1 does not also report its R2 price anomaly).
+
+**Rationale:** `reasons` answers "why did this listing end up here?", and a short list with only the deciding reasons answers it without the moderator having to work out which reasons mattered. Both escalation reasons are kept because a human reviewer needs to check both. (This refines A5, which said all applicable rules are evaluated: they are, but only the deciding ones are reported.)
+
+**Cost of being wrong:** If moderators need the full picture (e.g. to spot a seller who triggers R2 repeatedly but is always rejected by R1 first), that information is not stored. Reporting overridden rules too is a change in the decision function only; decisions already stored would stay without them.
+
+---
+
+## A19 — Reasons for an approval where no rule fired
+
+**Ambiguity:** `Decision.reasons` is required, and AGENTS.md says approvals carry reasons too, but when no rule fires there is no rule to cite. `openapi.yaml` allows "a rule id you introduce".
+
+**Decision:** An approval with no rule fired carries one reason: `{"rule_id": "PASS", "message": "No moderation rule matched (checked R1, R2, R3, R5)"}`. An R4 approval carries the R4 reason instead.
+
+**Rationale:** An empty list looks like missing data. An explicit reason tells the moderator that the listing was checked and what it was checked against.
+
+**Cost of being wrong:** A client that expects every `rule_id` to be R1–R5 sees an unfamiliar value. Returning `[]` instead is a one-line change.
+
+---
+
+## A20 — A banned term matched more than once
+
+**Ambiguity:** R1 only says a listing containing a banned term is rejected. A listing can contain several terms, or the same term in both title and description.
+
+**Decision:** One R1 reason per matched term, naming where it was found, with the term quoted exactly as it is written in the seed file, e.g. `title contains banned term "replica"`, `title and description contain banned term "fake"`. The matched text as it appears in the listing is in `detail.matched`.
+
+**Rationale:** `openapi.yaml` requires the term in `message`. One reason per term keeps each message short and lets a moderator see every problem the seller must fix before resubmitting.
+
+**Cost of being wrong:** If one combined R1 reason is expected, clients counting reasons see more than one. Only the decision output changes.
+
+---
+
+## A21 — Spacing inside multi-word banned terms
+
+**Ambiguity:** R1 requires a "word-boundary match" and the seed has multi-word terms (`"hang gia"`, `"hang nhai"`). It does not say whether `hang  gia` (two spaces) or `hang` and `gia` on separate lines match.
+
+**Decision:** Any run of whitespace between the words of a term matches: `hang gia`, `hang  gia`, `hang\ngia`. Words must still be complete words (Unicode-aware boundaries: a letter, digit or combining accent mark next to the term means it is part of a longer word). Accented spellings do not match (A12).
+
+**Rationale:** Otherwise a seller could avoid R1 just by typing two spaces. Allowing extra whitespace does not change what the term means, unlike accent folding.
+
+**Cost of being wrong:** A listing where the words of a term are separated by a line break, for an innocent reason, is rejected. Requiring a single space is a one-line change in the R1 pattern.
+
+---
+
+## A22 — Price 0 and R2
+
+**Ambiguity:** R2 sends a listing to `needs_human` when the price is "less than one-third of the median price for its category". `price_vnd` may be `0` (`minimum: 0` in the spec), and 0 is less than a third of any median. The brief does not say whether free listings are exempt.
+
+**Decision:** No exemption. A price of 0 goes to `needs_human` under R2, like any other price below one-third of the median. Boundaries are exact: a price of exactly three times, or exactly one-third of, the median does **not** fire R2. The comparison uses integers only (`price × 3 < median`, `price > median × 3`).
+
+**Rationale:** It is what the rule says, and "free" is a common bait pattern, so human review of free items is defensible. Exempting 0 would be an exception the brief never mentions.
+
+**Cost of being wrong:** Every free / give-away listing from a seller without R4 trust waits for a moderator, adding review load. Exempting 0 is a one-line change in R2.

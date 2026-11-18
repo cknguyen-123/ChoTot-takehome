@@ -52,7 +52,7 @@ result. Listings escalated to `needs_human` are resolved through the moderator e
 |-----------|----------------|----------|
 | `routes/` | HTTP, request validation (spec limits), status codes, error shape `{error:{code,message}}` | contain business rules or SQL |
 | `services/` | Use cases: submit, get, list, human decision, process job. Own transaction boundaries. | build HTTP responses |
-| `rules/` | One pure function per rule: `(listing, context) → Reason \| null` | do I/O |
+| `rules/` | One pure function per rule: `(listing, context) → Reason[]` (empty when it does not fire) | do I/O |
 | `moderation/decide` | Combine rule results into one outcome using the precedence in ASSUMPTIONS (A1, A2, A5, A6). **Only place precedence exists.** | do I/O |
 | `repositories/` | All SQL, parameterised | make business decisions |
 | `reference/` | Seed data (sellers, categories, banned keywords) loaded and validated at startup | change at runtime |
@@ -172,7 +172,7 @@ Plain reads. `decision` is `null` while `pending`. The list endpoint filters by
 | One winner among concurrent human decisions | `UPDATE … WHERE status='needs_human'` |
 | Accepted work is not left unprocessed | Job written in the same transaction as the listing; lease expiry re-queues crashed claims; bounded retries with backoff |
 | Failures reach an operator | Jobs end in `failed` with `last_error` and are logged at error level. In the current scope an operator finds them by querying `moderation_jobs` directly (A7). An admin API is deferred (§6.1). |
-| Decisions are explainable | Every fired rule adds a `Reason {rule_id, message, detail}`; R1's message contains the matched term; approvals carry reasons too |
+| Decisions are explainable | Each rule that decided the outcome adds a `Reason {rule_id, message, detail}` (A18); R1's message quotes the seed term (A20); approvals carry an R4 or `PASS` reason (A19) |
 
 R1–R5 make no external writes, so there are no external side effects to retry.
 

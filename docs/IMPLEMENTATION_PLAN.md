@@ -63,11 +63,14 @@ samples were run against `make run`'s stack and returned 202/200/409/400/422/200
 
 ## Phase 4: Moderation Engine
 
-- [ ] Task 4.1: Implement individual moderation rules
-- [ ] Task 4.2: Implement rule evaluation
-- [ ] Task 4.3: Implement moderation outcomes
-- [ ] Task 4.4: Write rule unit tests
-- [ ] Task 4.5: Test combined moderation scenarios
+Decisions A18–A22 (report only the deciding rules is the developer's choice against the
+model's recommendation, see AI-NOTES.md). Verified: `make test` → 136/136 pass.
+
+- [x] Task 4.1: Implement individual moderation rules — `src/rules/r1…r5` (pure, `→ Reason[]`)
+- [x] Task 4.2: Implement rule evaluation — `src/moderation/decide.js`, the only place precedence lives
+- [x] Task 4.3: Implement moderation outcomes — approved → `published` (A10), rejected → `auto_rejected`, escalated → `needs_human`
+- [x] Task 4.4: Write rule unit tests — `test/rules.test.js` (trust 79/80, exact 3x and 1/3, price 0, substrings, Unicode boundaries, multi-word, accents)
+- [x] Task 4.5: Test combined moderation scenarios — `test/decide.test.js` (every precedence case with the seed sellers)
 
 ## Phase 5: Background Processing
 

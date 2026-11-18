@@ -25,6 +25,14 @@ How AI tools were used on this take-home. Written as the work happens, not after
   being wrong: None", and A7 contradicted ARCHITECTURE.md on where failed jobs are
   visible. All fixed.
 
+- **A test that could not fail (Phase 4).** To prove R1 uses Unicode-aware word
+  boundaries, the model wrote a test expecting `'fakế'` not to match "fake". It passed,
+  but for the wrong reason: `'fakế'` does not contain "fake" at all, so the naive `\b`
+  version AGENTS.md warns about would pass it too. Caught by running the naive pattern
+  against the test inputs before trusting the green result. Fixed to `'fakeế'`, which
+  the naive pattern does match. Rule added to AGENTS.md: check that the *wrong*
+  implementation fails a boundary test.
+
 ## Decisions I took on the model's recommendations
 
 The agent listed five gaps in the brief with a recommendation each; I decided
@@ -51,6 +59,13 @@ working. I chose to **reject them with 400**: a silently dropped field is one th
 client believes was stored, and a typo like `price` for `price_vnd` should fail loudly.
 I accepted its other four Phase 3 recommendations (strict types, no trimming, error
 order 400 → 422 → 409/200, replay returns the current status; A14–A17).
+
+**Where I disagreed (which reasons to report, Phase 4, A18).** The model recommended
+listing *every* rule that fired, marking the overridden ones. I chose to report **only
+the rules that decided the outcome**: `reasons` should answer "why is it here?"
+without the moderator having to work out which reasons mattered. Accepted its other
+four Phase 4 recommendations (A19–A22: an explicit `PASS` reason, one R1 reason per
+term, any whitespace inside multi-word terms, price 0 escalates under R2).
 
 **Where I disagreed (migration tool, Phase 2).** The model recommended a ~80-line
 hand-written migration runner (no dependency, every line explainable in review) over
