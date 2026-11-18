@@ -1,0 +1,17 @@
+.git
+.gitignore
+.gitattributes
+node_modules
+npm-debug.log*
+coverage
+docs
+*.md
+BRIEF.md
+.env
+.env.*
+Makefile
+Makefile.example
+scripts
+docker-compose*.yml
+Dockerfile
+.dockerignore

@@ -1,8 +1,7 @@
 # ARCHITECTURE.md
 
 How the Listing Moderation Service is laid out, and **why**. Business decisions
-referenced here (A1, A2 …) live in `ASSUMPTIONS.md`. Items marked **OPEN** depend on a
-decision that has not been taken yet.
+referenced here (A1, A2 …) live in `ASSUMPTIONS.md`. 
 
 ---
 
@@ -41,13 +40,11 @@ result. Listings escalated to `needs_human` are resolved through the moderator e
                                               └─► rejected       reject
 ```
 
-- `draft` from the brief is not in the API `Status` enum and is not used (**OPEN**,
-  ASSUMPTIONS).
-- When `auto_approved` becomes `published` (same transaction vs. a later step) is **OPEN**
-  (A2). The design supports both: publishing is a guarded update
-  `WHERE status='auto_approved'`.
-- `expired` exists in the enum; what triggers it is **OPEN**. If implemented, it is a
-  periodic guarded update `WHERE status='published' AND …`, never a moderation phase.
+- `draft` is a client-side state and is never stored (A9).
+- An automated approval is published in the same transaction that commits it, so
+  `auto_approved` is never a resting state (A10).
+- Nothing sets `expired` yet (A11). If added, it is a periodic guarded update
+  `WHERE status='published' AND …`, never a moderation phase.
 
 ## 2. Components and boundaries
 
@@ -104,7 +101,7 @@ listings (
   decided_at       timestamptz,
   decided_by       text,                        -- moderator_id for human decisions
   created_at       timestamptz not null default now(),
-  submission_key   text unique,                 -- idempotency key (transport: OPEN)
+  submission_key   text unique,                 -- Idempotency-Key header (A8)
   request_hash     text,                        -- hash of normalised body → 200 vs 409
   dedup_key        text                         -- normalised fields for R3 (A3)
 )
@@ -134,8 +131,8 @@ disagree.
      `{id, status}`; different hash → **409**.
 3. No rules are evaluated here (including R4, see A2).
 
-How the key is supplied (header name, required or optional, behaviour without a key) is
-**OPEN** in ASSUMPTIONS. The mechanism above does not change whatever is chosen.
+The key comes from the required `Idempotency-Key` header; a request without it gets
+`400` (A8).
 
 ### 5.2 Automated moderation — worker
 1. **Claim:** in a short transaction, select one job where

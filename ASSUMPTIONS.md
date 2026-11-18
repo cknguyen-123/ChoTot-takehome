@@ -26,7 +26,11 @@ The wording "always rejected" in R1 suggests that banned content should never be
 
 **Cost of being wrong:**
 
-None.
+If trusted sellers were meant to bypass R1 too, their listings that mention a banned
+term (including innocent uses such as "not fake, 100% original") are rejected and must
+be resubmitted with different wording. This is a one-line precedence change in the
+decision function. The opposite mistake (letting banned content from trusted sellers
+through) would be worse, which is why we chose this side.
 
 ---
 
@@ -183,11 +187,16 @@ The brief requires incomplete evaluations to be retried or brought to an operato
 
 **Decision:**
 
-Failed moderation jobs will be retried using a bounded retry strategy. After exhausting the retry limit, the failure will be recorded and made visible through application logs for operator investigation.
+Failed moderation jobs will be retried using a bounded retry strategy (backoff between
+attempts). After exhausting the retry limit, the job is marked `failed` in the
+`moderation_jobs` table with its attempt count and last error, and an error-level log
+line is written. An operator finds failed jobs by querying that table (ARCHITECTURE.md
+§6); the listing itself stays `pending`. An admin API for this is deferred
+(ARCHITECTURE.md §6.1).
 
 **Rationale:**
 
-This prevents transient failures from permanently leaving listings unprocessed while avoiding unlimited retries for persistent failures.
+This prevents transient failures from permanently leaving listings unprocessed while avoiding unlimited retries for persistent failures. A log line alone is easy to miss and disappears with the container, so the failure is also stored durably where it can be queried.
 
 **Cost of being wrong:**
 
@@ -199,3 +208,60 @@ A bounded retry strategy may stop retrying a job that could eventually succeed. 
 
 
 
+## A8 — How the submission key is carried
+
+**Ambiguity:** The brief says "two requests to `POST /v1/listings` with the same key must produce exactly one listing", and `openapi.yaml` describes a 409 when "a submission key from an earlier request was reused with a different request body". Neither says what the key is or how it is sent.
+
+**Decision:** The client sends the key in a **required** `Idempotency-Key` request header (1–200 printable characters). A request without it gets `400`. The key is stored with a hash of the request body: same key and same body → `200` with the original `{id, status}`; same key and different body → `409`. This is an addition to the contract, which the brief allows.
+
+**Rationale:** `Idempotency-Key` is the common convention (Stripe, the IETF draft), so client libraries already know it. Making it required removes the ambiguous case: an optional key would let a retried request without a key create a second listing, which is exactly what the guarantee forbids. Deriving the key from the body was rejected because a seller may legitimately submit the same content twice (R3 decides that, not the transport layer). To decide differently we would need to know whether existing clients can send a header.
+
+**Cost of being wrong:** If the conformance suite sends no header, or uses another name, every submission fails with `400`. Switching to an optional header, or accepting another name too, is a small change in the route; the storage and the unique constraint stay the same.
+
+---
+
+## A9 — The `draft` status
+
+**Ambiguity:** The lifecycle diagram starts with `draft ──► pending`, but the API `Status` enum in `openapi.yaml` has no `draft`, and no endpoint creates or edits drafts.
+
+**Decision:** `draft` is a client-side state (the seller is still writing the listing). The service never stores it. A listing exists in the service from `pending` onwards.
+
+**Rationale:** The enum is normative and cannot be changed, and `POST /v1/listings` is defined to return `pending`. Storing drafts would need new endpoints nobody asked for.
+
+**Cost of being wrong:** If drafts must be saved server-side, we would need a draft endpoint, a new status value (an addition to the enum) and a "submit draft" transition. The existing moderation flow would not change.
+
+---
+
+## A10 — When an approved listing becomes `published`
+
+**Ambiguity:** The lifecycle shows `auto_approved ──► published`, R4 says trusted sellers' listings are "published immediately", and the brief says "publication after approval and expiry are lifecycle changes, not additional moderation phases". It does not say when publication happens.
+
+**Decision:** The worker publishes in the **same transaction** that commits the approval: `status` moves `pending → auto_approved → published` atomically, and the API never shows `auto_approved` as a resting state. `decision.outcome` stays `approved` and `decided_at` is set. Human approval goes straight to `published`.
+
+**Rationale:** There is no scheduled publication or other condition in the brief, so a separate step would only add a delay and a second failure point. Publishing atomically is as close as an asynchronous design gets to R4's "immediately".
+
+**Cost of being wrong:** If publication must be a separate step (e.g. scheduled go-live), approved listings would need to stop at `auto_approved` and a publisher would move them on with a guarded `UPDATE … WHERE status='auto_approved'`. Listings already published would not be affected.
+
+---
+
+## A11 — What makes a listing `expired`
+
+**Ambiguity:** `expired` is in the lifecycle and the enum, but the brief gives no listing lifetime or trigger.
+
+**Decision:** Out of scope. The value is accepted as a status filter, but nothing sets it. Expired listings already count as not active for R3 (A4).
+
+**Rationale:** Without a lifetime there is no correct value to choose, and expiry is a lifecycle change, not a moderation phase, so it does not affect the guarantees being tested. Recorded as a known limitation in README.
+
+**Cost of being wrong:** If expiry is expected, published listings stay published forever. Adding it is a periodic guarded `UPDATE … WHERE status='published' AND published_at < now() - <lifetime>`; no schema change beyond a `published_at` column.
+
+---
+
+## A12 — R1 and Vietnamese diacritics
+
+**Ambiguity:** R1 requires a "case-insensitive, word-boundary match" against `seed/banned_keywords.json`, which contains unaccented Vietnamese terms (`"hang gia"`, `"hang nhai"`). The brief does not say whether the accented spelling (`hàng giả`) should match.
+
+**Decision:** No accent folding. Terms are matched **exactly as written in the seed**, case-insensitively, with Unicode-aware word boundaries. `hang gia` matches "Hang Gia" but **not** "hàng giả".
+
+**Rationale:** The rule says to match terms from the seed file, and the seed file says `hang gia`. Folding accents would change what the term means: Vietnamese words that differ only by diacritics can be unrelated, so folding risks rejecting innocent listings, and R1 is an always-reject rule with no human review. If accented forms should be banned, they can be added to the keyword list as data.
+
+**Cost of being wrong:** Listings that write the banned term with diacritics (the normal way to write Vietnamese) are not caught by R1 and may be published. Fixing it is a normalisation step (NFD + strip combining marks) applied to both terms and text before matching, plus re-checking listings already published.

@@ -34,11 +34,11 @@ The process of evaluating a listing against moderation rules.
 
 ### Active Listing
 A listing considered active according to the agreed
-business definition in ASSUMPTIONS.md.
+business definition in ../ASSUMPTIONS.md.
 
 ## 4. Important Business Rules
 
-Refer to ASSUMPTIONS.md for the complete list of
+Refer to ../ASSUMPTIONS.md for the complete list of
 agreed assumptions and unresolved questions.
 
 Refer to the requirements documentation for the
@@ -66,7 +66,7 @@ Update this section as development progresses.
 ## 7. Important Technical Decisions
 
 Document significant decisions here or reference
-ARCHITECTURE.md for their detailed explanations.
+../ARCHITECTURE.md for their detailed explanations.
 
 ## 8. Known Limitations
 

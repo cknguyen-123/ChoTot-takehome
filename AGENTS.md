@@ -16,8 +16,14 @@ against rules R1–R5, and lets a human moderator resolve listings that need rev
 - **Reviewers read the design and the reasoning**, not just the code: `ARCHITECTURE.md`,
   `ASSUMPTIONS.md`, `AI-NOTES.md` and this file are graded deliverables.
 - **Stack:** Node.js + Express, PostgreSQL, Docker / Docker Compose.
-  Test runner: not chosen yet; decide in Phase 1 and record it here. It must run inside
-  a container (see §3).
+  Node 24 (Alpine images), ES modules, Express 5 (async errors reach the error handler
+  without wrappers). Tests use the built-in `node:test` runner and global `fetch`; no
+  test framework dependency. Tests run inside a container (see §3).
+- **Layout:** `src/app.js` builds the app (no listening, no signals; used by tests),
+  `src/server.js` is the process entry point, `src/config.js` reads env once,
+  `src/http/` holds error and health handlers, `scripts/` holds the `make` helpers.
+  `ARCHITECTURE.md` and `ASSUMPTIONS.md` sit at the repo root (brief §4 lists them
+  there); `docs/` holds only the plan and context notes.
 
 ## 2. Sources of truth (in priority order)
 
@@ -27,9 +33,9 @@ against rules R1–R5, and lets a human moderator resolve listings that need rev
 2. **`BRIEF.md`** — the exercise text. It lives on the developer's machine only and is
    git-ignored: **never commit it, never delete the ignore rule**. If you cannot see it,
    §4 of this file summarises what matters; ask the user rather than guess.
-3. **`docs/ASSUMPTIONS.md`** — decisions taken where the brief is unclear or
+3. **`ASSUMPTIONS.md`** — decisions taken where the brief is unclear or
    contradictory. Code must match these decisions exactly.
-4. **`docs/ARCHITECTURE.md`** — the agreed design.
+4. **`ARCHITECTURE.md`** — the agreed design.
 5. Existing code, then your own suggestions.
 
 `seed/*.json` is **read-only input**. Load it at startup; do not edit, reformat or
@@ -77,7 +83,7 @@ see ASSUMPTIONS.)
 | R5 | Seller `verified: false` | `needs_human` |
 
 Rule precedence, the meaning of "same" and "active", and how R4 interacts with R1/R5
-are **decided in `docs/ASSUMPTIONS.md`**. Implement precedence in **one place** (the
+are **decided in `ASSUMPTIONS.md`**. Implement precedence in **one place** (the
 decision function); never duplicate it in routes, SQL or the worker.
 
 **Moderation phases** — each may commit **at most one** result:
@@ -164,8 +170,8 @@ by the **database**, not by checks in application memory.
 
 | File | Rule |
 |------|------|
-| `docs/ASSUMPTIONS.md` | Every ambiguity → `## A<n> — <title>` with **Ambiguity** (quote the brief), **Decision**, **Rationale**, **Cost of being wrong**. All four fields, every entry. |
-| `docs/ARCHITECTURE.md` | Storage/queue choice **and why**; what `/livez` and `/readyz` report; what survives a worker restart and a full restart; supported worker/DB topology; how each §6 invariant is enforced; what to change first for production. |
+| `ASSUMPTIONS.md` | Every ambiguity → `## A<n> — <title>` with **Ambiguity** (quote the brief), **Decision**, **Rationale**, **Cost of being wrong**. All four fields, every entry. |
+| `ARCHITECTURE.md` | Storage/queue choice **and why**; what `/livez` and `/readyz` report; what survives a worker restart and a full restart; supported worker/DB topology; how each §6 invariant is enforced; what to change first for production. |
 | `README.md` | Replace the starter-kit text: how to run/test, test prerequisites, **where this agent file lives**, known limitations / cuts. |
 | `AI-NOTES.md` | Half a page, written **as we go**: what was delegated vs written by hand, where the model was wrong and how it was caught, a path abandoned. When you (the agent) make a mistake the user catches, remind them to log it. |
 | `docs/IMPLEMENTATION_PLAN.md` | Tick tasks only after tests pass. |
@@ -197,11 +203,23 @@ Do not duplicate content across files; link instead.
 - Implementing R1 with plain `\b…\b`: JavaScript `\b` treats accented letters (`à`, `ả`,
   `đ`…) as non-word characters, so a term can "match" inside a Vietnamese word. Use
   Unicode-aware boundaries (e.g. `(?<![\p{L}\p{N}])term(?![\p{L}\p{N}])` with the `u`
-  flag) and escape the term. Whether `hàng giả` should match `hang gia` is an
-  ASSUMPTIONS decision.
+  flag) and escape the term. **Decided (A12): no accent folding** — `hàng giả` must
+  **not** match `hang gia`; do not add NFD/diacritic stripping.
 - Putting the R1 term only in `detail` instead of in `message`.
 - Editing `openapi.yaml` to fit the implementation, or changing seed files.
 - Adding a host-side `npm install` to the Makefile.
+- **(Phase 1, real)** First `scripts/run.sh` ran `docker compose up` in the foreground.
+  GNU make forwards SIGTERM to the script, but `sh` only runs a trap after the
+  foreground command ends, so the stack kept running. Fix: start compose in the
+  background and `wait` on it. Caught by simulating signals with a fake `docker`.
+- Shell scripts and the Makefile need LF line endings (`.gitattributes`); a Windows
+  checkout with CRLF breaks `sh` on the Linux runner.
+- **(Phase 1 review, real)** File-name case: `AGENTS.MD` and `AI-NOTE.md` instead of
+  `AGENTS.md` / `AI-NOTES.md`. Windows does not care; the Linux grader and links do.
+  Fixed with `git mv`.
+- **(Phase 1 review, real)** Dockerfile fell back to `npm install` when the lockfile
+  was missing, so builds were not reproducible and nobody noticed. The lockfile is now
+  required (`npm ci`); regenerate with `make lock`.
 - _(add real incidents here as they happen, with one line on the fix)_
 
 ## 11. How to work with the user

@@ -11,13 +11,29 @@
 - Complete and verify the current task before moving on.
 - Update task status after implementation.
 
-## Phase 1: Project Setup
+## Phase 1: Project Setup (walking skeleton)
 
-- [ ] Task 1.1: Initialize Node.js project
-- [ ] Task 1.2: Configure Express
-- [ ] Task 1.3: Configure environment variables
-- [ ] Task 1.4: Configure error handling
-- [ ] Task 1.5: Add health check endpoint
+Goal: `make run` serves `/livez` and `/readyz` on `$PORT` from a cold machine, and
+`make test` runs the suite in Docker. Docker moved here from Phase 7 because the
+startup contract is the one hard pass/fail check.
+
+Status: code written. On the developer's Windows machine (Docker 29, no `make`
+installed) the scripts behind the targets were run directly: `sh scripts/test.sh` →
+25/25 tests pass in a container; `PORT=8091 sh scripts/run.sh …` → `/livez` and
+`/readyz` answer 200 about 22 s after start (base images already cached).
+`package-lock.json` generated.
+Confirmed by the developer: `make test` and `make run` (Ctrl-C teardown included) work in Git Bash with GNU Make 4.4.1. Fresh-clone check still to do before submitting.
+
+- [x] Task 1.1: Initialize Node.js project — `package.json` (ESM, Node 24, Express 5), `src/` layout
+- [x] Task 1.2: Configure Express — `createApp()` factory (`src/app.js`) separate from `src/server.js`
+- [x] Task 1.3: Configure environment variables — `src/config.js` (validated, fail fast), `.env.example`
+- [x] Task 1.4: Configure error handling — `{error:{code,message}}` for 404, invalid JSON (400), oversized body (413), `AppError`, hidden 500s
+- [x] Task 1.5: Health endpoints — `/livez` (no dependency checks), `/readyz` (pluggable checks with timeout; 503 during shutdown)
+- [x] Task 1.6: Graceful shutdown on SIGTERM/SIGINT; structured JSON logging
+- [x] Task 1.7: Docker — multi-stage `Dockerfile` (runtime/test targets), `docker-compose.yml` (db, api, test profile)
+- [x] Task 1.8: `Makefile` — `run` (PORT, foreground, always cleans up), `test` (isolated, exit code), `clean`, `lock`
+- [x] Task 1.9: Tests with `node:test` — config, health probes, error handling
+- [x] Task 1.10: Generate and commit `package-lock.json` (`make lock`), `.gitattributes` for LF scripts
 
 ## Phase 2: Database
 
@@ -62,6 +78,6 @@
 
 - [ ] Task 7.1: Integration testing
 - [ ] Task 7.2: Error handling review
-- [ ] Task 7.3: Docker configuration
+- [ ] Task 7.3: Docker review — cold-machine timing under 180 s, image size (initial setup is Task 1.7)
 - [ ] Task 7.4: Documentation
 - [ ] Task 7.5: Final end-to-end testing

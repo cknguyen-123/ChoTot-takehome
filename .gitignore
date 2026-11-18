@@ -18,3 +18,13 @@ __MACOSX/
 .AppleDouble
 .LSOverride
 Icon[]
+
+# Node
+node_modules/
+npm-debug.log*
+coverage/
+
+# Local environment (never commit)
+.env
+.env.*
+!.env.example

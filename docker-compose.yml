@@ -1,0 +1,49 @@
+# Used by `make run` and `make test`; see Makefile. The project name (-p) is set
+# by the Makefile so parallel runs on different ports never touch each other.
+#
+# Credentials below are local-development defaults, not secrets.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: moderation
+      POSTGRES_PASSWORD: moderation
+      POSTGRES_DB: moderation
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moderation -d moderation"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Not published to the host: only the API talks to it.
+
+  api:
+    build:
+      context: .
+      target: runtime
+    init: true
+    environment:
+      PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://moderation:moderation@db:5432/moderation
+    ports:
+      # Host port from PORT (default 8080); container port is fixed.
+      - "${PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    init: true
+    environment:
+      LOG_LEVEL: error
+    # Phase 2 adds: depends_on db (a throwaway database for integration tests).
+
+volumes:
+  pgdata:
