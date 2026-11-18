@@ -265,3 +265,66 @@ A bounded retry strategy may stop retrying a job that could eventually succeed. 
 **Rationale:** The rule says to match terms from the seed file, and the seed file says `hang gia`. Folding accents would change what the term means: Vietnamese words that differ only by diacritics can be unrelated, so folding risks rejecting innocent listings, and R1 is an always-reject rule with no human review. If accented forms should be banned, they can be added to the keyword list as data.
 
 **Cost of being wrong:** Listings that write the banned term with diacritics (the normal way to write Vietnamese) are not caught by R1 and may be published. Fixing it is a normalisation step (NFD + strip combining marks) applied to both terms and text before matching, plus re-checking listings already published.
+
+---
+
+## A13 — Fields the spec does not define
+
+**Ambiguity:** `ListingRequest` in `openapi.yaml` lists five properties but does not say `additionalProperties: false`, and the brief says the contract is "extensible where it does not [speak]". What should `POST /v1/listings` do with a body like `{…, "color": "red"}`?
+
+**Decision:** Reject it with `400 invalid_request`, naming the unknown field(s). Only `seller_id`, `title`, `description`, `price_vnd` and `category_id` are accepted. (Query parameters on `GET /v1/listings` that the spec does not define are ignored; this decision is about the request body.)
+
+**Rationale:** A field we silently drop is a field the client thinks we stored. A typo such as `price` instead of `price_vnd` is caught immediately instead of producing a confusing "price_vnd is required", and nothing we do not understand ever reaches moderation. When the contract grows, the new field is added to the accepted list deliberately. To decide differently we would need to know that clients send extra fields we must tolerate (e.g. a shared client library used against several services).
+
+**Cost of being wrong:** If the conformance suite or real clients send extra fields, every such submission fails with `400` and nothing is stored. Switching to "ignore unknown fields" is a one-line change in the validator; the request hash already covers only the five known fields, so retries would behave the same.
+
+---
+
+## A14 — Strict types and the `price_vnd` upper bound
+
+**Ambiguity:** The spec gives types (`price_vnd: integer, format: int64, minimum: 0`) but not how to treat near-misses such as `"price_vnd": "1000"` (a string) or `12.5`. It also allows int64 prices up to 9.2 × 10¹⁸, beyond what JavaScript numbers hold exactly.
+
+**Decision:** No type coercion: every field must already have the spec's JSON type, otherwise `400`. `price_vnd` must be an integer between `0` and `Number.MAX_SAFE_INTEGER` (9,007,199,254,740,991 VND). Title and description lengths are counted in Unicode characters (code points), the same way JSON Schema and Postgres `char_length` count them.
+
+**Rationale:** Guessing what a client meant risks storing a wrong price, and a wrong price drives R2. The cap is about 9 × 10¹⁵ VND, far above any real listing, and keeps every price exactly representable, so R2's integer arithmetic stays exact.
+
+**Cost of being wrong:** Clients that send numbers as strings get `400` instead of being accepted. A legitimate price above the cap (not realistic for a marketplace) cannot be submitted; supporting it would mean handling prices as `BigInt` end to end.
+
+---
+
+## A15 — Whitespace in titles and descriptions
+
+**Ambiguity:** `title` has `minLength: 1`. A title of `"   "` satisfies that literally but is empty to a reader. The brief does not say whether text is trimmed.
+
+**Decision:** Text is validated and stored exactly as sent; no trimming. `"   "` is a valid title. (R3's duplicate comparison still ignores leading/trailing whitespace and case, per A3; that normalisation is only used for comparison, never stored.)
+
+**Rationale:** The spec is the contract and says "at least one character". Adding rules it does not state risks rejecting requests the conformance suite considers valid. What a seller typed is what a moderator sees.
+
+**Cost of being wrong:** Listings with blank-looking titles can be stored and reach moderation or publication. Rejecting them is a small validator change, but listings already stored would need cleaning up.
+
+---
+
+## A16 — Which error wins when several apply
+
+**Ambiguity:** A request can be wrong in several ways at once (invalid body, unknown seller, reused key). `openapi.yaml` lists 400, 409 and 422 but not their order.
+
+**Decision:** Checks run in this order and the first failure is returned:
+1. **400**: missing or malformed `Idempotency-Key`, body not a JSON object, unknown fields (A13), wrong types or limits (A14).
+2. **422**: `seller_id` or `category_id` not in the seed data.
+3. **Idempotency**: key unused → store and `202`; key used with the same body → `200`; key used with a different body → `409`.
+
+**Rationale:** Cheap checks that need no database run first. A request that is invalid or refers to unknown data is never stored, so it never consumes an idempotency key; the client can fix it and retry with the same key.
+
+**Cost of being wrong:** If a client expects `409` for "reused key with a different, invalid body", it gets `400` or `422` instead. In all orders nothing incorrect is stored.
+
+---
+
+## A17 — What a replayed submission returns
+
+**Ambiguity:** `openapi.yaml` defines `200` as "Replay of an earlier submission — the listing already exists", with the `ListingAccepted` body `{id, status}`. It does not say whether `status` is the value from the first response (`pending`) or the listing's status now.
+
+**Decision:** A replay returns the listing's **current** status, e.g. `{"id": "...", "status": "published"}` if moderation has finished.
+
+**Rationale:** The response should be true at the time it is sent. Returning `pending` for a published listing would mislead a client that uses the replay to check progress. The `id`, which is what makes the replay idempotent, is always the original one.
+
+**Cost of being wrong:** A client (or test) expecting a byte-identical replay of the first response would see a different `status` once moderation has run. Returning the stored first response instead is a small change in the service.

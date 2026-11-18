@@ -121,7 +121,9 @@ disagree.
 ## 5. Request and processing flows
 
 ### 5.1 Submit — `POST /v1/listings`
-1. Validate body (400) and check `seller_id` / `category_id` against seed data (422).
+1. Validate the `Idempotency-Key` header and the body (400), then check `seller_id` /
+   `category_id` against seed data (422). This order (A16) means a rejected request
+   never consumes its key.
 2. In one transaction:
    `INSERT INTO listings … ON CONFLICT (submission_key) DO NOTHING RETURNING id`.
    - Inserted → also `INSERT INTO moderation_jobs`; respond **202** `{id, status}`.

@@ -10,6 +10,7 @@ import { listMigrationNames, migrate } from './db/migrate.js';
 import { createPool } from './db/pool.js';
 import { createLogger } from './logger.js';
 import { loadSeed } from './reference/seed.js';
+import { createListingService } from './services/listings.js';
 
 const bootLogger = createLogger();
 
@@ -54,7 +55,13 @@ async function start() {
     migrationsCheck(pool, migrationNames),
   ];
 
-  const app = createApp({ logger, readinessChecks, readinessCheckTimeoutMs: config.readinessCheckTimeoutMs });
+  const listingService = createListingService({ pool, seed, logger });
+  const app = createApp({
+    logger,
+    readinessChecks,
+    readinessCheckTimeoutMs: config.readinessCheckTimeoutMs,
+    listingService,
+  });
 
   server = app.listen(config.port, () => logger.info('listening', { port: config.port }));
   server.on('error', (err) => {

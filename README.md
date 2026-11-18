@@ -4,8 +4,8 @@ An HTTP service that accepts classified listings, moderates them asynchronously
 against rules R1–R5, and lets a human moderator resolve listings that need review.
 Node.js 24 + Express 5, PostgreSQL 17, Docker Compose.
 
-> **Status:** Phase 2 (database). The service starts, applies migrations, serves
-> `/livez` and `/readyz`, and returns errors in the API shape. The `/v1/listings` endpoints come
+> **Status:** Phase 3 (listing endpoints). Listings can be submitted, fetched and
+> listed. They stay `pending` until the moderation worker exists (Phase 5). The `/v1/listings` endpoints come
 > in later phases; see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## Prerequisites
@@ -28,6 +28,26 @@ runs; `make clean` deletes it.
 curl -s localhost:8080/livez    # {"status":"ok"}
 curl -s localhost:8080/readyz   # {"status":"ok","checks":{"seed":"ok","database":"ok","migrations":"ok",...}}
 ```
+
+## Try it
+
+With `make run` going, in a second terminal (Git Bash on Windows):
+
+```sh
+# Submit: 202 {"id": "...", "status": "pending"}
+curl -i -X POST localhost:8080/v1/listings   -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-001'   -d '{"seller_id":"s-1002","category_id":"c-phones","title":"iPhone 13 128GB","description":"Used, good condition","price_vnd":12000000}'
+
+# Same command again: 200 with the same id (idempotent replay)
+# Same key, different body (e.g. another price): 409 idempotency_key_reused
+
+# Fetch one, and list a seller's listings (newest first)
+curl -s localhost:8080/v1/listings/<id>
+curl -s 'localhost:8080/v1/listings?seller_id=s-1002&status=pending&limit=5'
+```
+
+`POST /v1/listings` requires an `Idempotency-Key` header (A8) and rejects fields the
+spec does not define (A13). Seed sellers are `s-1001`…`s-1008`; categories are
+`c-phones`, `c-laptops`, `c-motorbikes`, `c-furniture`, `c-fashion`.
 
 ## Test
 
@@ -63,8 +83,8 @@ any test fails. Each run uses its own Compose project, so it never touches a run
 
 ## Known limitations
 
-- Phase 2 only: listing submission, moderation worker and human decisions are not
-  implemented yet.
+- Moderation rules, the worker and human decisions are not implemented yet, so
+  listings stay `pending`.
 - `POST /v1/listings` requires an `Idempotency-Key` header (A8).
 - Nothing moves listings to `expired` (A11).
 - R1 matches banned terms as written: `hàng giả` (with accents) is not caught by

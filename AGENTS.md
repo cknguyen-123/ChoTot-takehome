@@ -101,8 +101,9 @@ decision function); never duplicate it in routes, SQL or the worker.
   **200** with the same body on a replay of the same submission; **409** if a
   submission key is reused with a **different** body; **400** for invalid bodies;
   **422** if `seller_id` or `category_id` does not exist in the seed data.
-  How the submission key is carried (header name, required or not) is an ASSUMPTIONS
-  entry — the spec does not define it.
+  The key is the **required `Idempotency-Key` header** (A8). Unknown body fields → 400
+  (A13); no type coercion, `price_vnd` ≤ `Number.MAX_SAFE_INTEGER` (A14); no trimming
+  (A15); check order 400 → 422 → 409/200 (A16); a replay returns the current status (A17).
 - `GET /v1/listings` (list, filters `seller_id`, `status`, `limit` 1–100 default 20,
   **newest first**) is defined in the spec, so it must be implemented.
 - `GET /v1/listings/{id}` → 200 or 404. `decision` is `null` while `pending`; once

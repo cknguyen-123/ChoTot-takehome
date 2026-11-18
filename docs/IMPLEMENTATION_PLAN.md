@@ -51,11 +51,15 @@ migration on first start, skips it on restart, `/readyz` reports all four checks
 
 ## Phase 3: Listing Management
 
-- [ ] Task 3.1: Implement listing submission API
-- [ ] Task 3.2: Implement request validation
-- [ ] Task 3.3: Persist listing submissions
-- [ ] Task 3.4: Implement listing retrieval API
-- [ ] Task 3.5: Write API tests
+Decisions A13–A17 (unknown fields → 400 is the developer's choice against the model's
+recommendation, see AI-NOTES.md). Verified: `make test` → 97/97 pass; the README `curl`
+samples were run against `make run`'s stack and returned 202/200/409/400/422/200.
+
+- [x] Task 3.1: Implement listing submission API — `POST /v1/listings` → 202 / 200 replay / 409
+- [x] Task 3.2: Implement request validation — `src/http/validation.js` (A8, A13–A15), order per A16
+- [x] Task 3.3: Persist listing submissions — `src/services/listings.js` (request hash, R3 dedup key, 422 checks)
+- [x] Task 3.4: Implement listing retrieval API — `GET /v1/listings/{id}` (404 incl. malformed ids), `GET /v1/listings`
+- [x] Task 3.5: Write API tests — `test/api-listings.test.js` (incl. 20 concurrent replays), `test/validation.test.js`
 
 ## Phase 4: Moderation Engine
 

@@ -45,6 +45,13 @@ widening it by normalisation risks rejecting innocent listings whose words diffe
 only by diacritics. Accented forms can be added to the keyword list as data. The
 known cost (accented spellings slip through) is written down in A12.
 
+**Where I disagreed (unknown fields, Phase 3, A13).** The model recommended
+*ignoring* request fields the spec does not define, so older or newer clients keep
+working. I chose to **reject them with 400**: a silently dropped field is one the
+client believes was stored, and a typo like `price` for `price_vnd` should fail loudly.
+I accepted its other four Phase 3 recommendations (strict types, no trimming, error
+order 400 → 422 → 409/200, replay returns the current status; A14–A17).
+
 **Where I disagreed (migration tool, Phase 2).** The model recommended a ~80-line
 hand-written migration runner (no dependency, every line explainable in review) over
 `node-pg-migrate`. It even wrote the runner. After reading it and asking what
