@@ -1,16 +1,10 @@
 # AI-NOTES.md
 
-How AI tools were used on this take-home. Written as the work happens, not afterwards.
-
-
 ## What was delegated vs. written by hand
 
-- **By hand:** _(author to confirm: e.g. reading the brief, the decisions in
-  `ASSUMPTIONS.md`, the phase plan)_
-- **Delegated, then reviewed:** the Phase 1 skeleton (Express app factory, config,
-  health probes, error handler, Dockerfile, Compose file, Makefile and helper
-  scripts) and its tests. A second agent (Claude Code) then reviewed all docs and code
-  for inconsistencies before Phase 2.
+- **By hand:** Read and analyzed the assignment requirements, identified unclear or conflicting rules, and personally wrote most of the decisions documented in ASSUMPTIONS.md. Defined the moderation logic, rule priorities, and listing lifecycle behavior. For ARCHITECTURE.md, used AI-generated suggestions as an initial reference, then reviewed and adjusted the architecture as development progressed to better fit the actual implementation. Planned the development into smaller phases and reviewed the decisions made throughout the project.
+
+- **Delegated, then reviewed:** Used AI to generate the initial Phase 1 project setup, including the Express app structure, configuration, health checks, error handling, Docker setup, Makefile, helper scripts, and related tests. Reviewed the generated code and made adjustments where needed. Also used Claude Code as a second reviewer to check the documentation and code for inconsistencies.
 
 ## Where the model was wrong and how it was caught
 
@@ -94,6 +88,6 @@ the library's up/down format.
 
 ## A path abandoned
 
-- **Hand-written migration runner** (Phase 2): built, reviewed, then replaced by
-  node-pg-migrate within the same session (see above). What made me stop: thinking
+- **Hand-written migration runner** : built, reviewed, then replaced by
+  node-pg-migrate within the same session. What made me stop: thinking
   about the service's lifetime rather than the exercise's.
