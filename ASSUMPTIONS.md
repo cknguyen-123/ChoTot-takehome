@@ -184,12 +184,19 @@ The brief requires incomplete evaluations to be retried or brought to an operato
 
 **Decision:**
 
-Failed moderation jobs will be retried using a bounded retry strategy (backoff between
-attempts). After exhausting the retry limit, the job is marked `failed` in the
-`moderation_jobs` table with its attempt count and last error, and an error-level log
-line is written. An operator finds failed jobs by querying that table (ARCHITECTURE.md
-§6); the listing itself stays `pending`. An admin API for this is deferred
-(ARCHITECTURE.md §6.1).
+When the worker can’t finish checking a listing, it tries again, a few times, waiting a bit longer each time. If it still fails after 5 tries, it stops, marks the job as “failed” and writes down why, so a person can find it and fix it.
+
+Like this:
+
+Try. It breaks (for example, the database hiccups).
+Wait 2 seconds, try again. Most problems are gone by now, so this usually works.
+Still broken? Wait longer each time: 4 s, then 8 s, then 16 s.
+After 5 tries, give up, and:
+mark the job failed in the database
+save the error message, so someone knows what went wrong
+leave the listing as pending, because it was never decided
+
+A person can then see the failed jobs with one query, fix the problem, and send the job back to the worker.
 
 **Rationale:**
 
@@ -293,7 +300,9 @@ No accent folding. Terms are matched **exactly as written in the seed**, case-in
 
 **Rationale:**
 
-The rule says to match terms from the seed file, and the seed file says `hang gia`. Folding accents would change what the term means: Vietnamese words that differ only by diacritics can be unrelated, so folding risks rejecting innocent listings, and R1 is an always-reject rule with no human review. If accented forms should be banned, they can be added to the keyword list as data.
+The service follows the seed data strictly: `seed/banned_keywords.json` is the source of truth for what is banned, and the program matches exactly the terms it lists, without adding variants of its own. R1 says to match terms *from the seed file*, and the seed file says `hang gia`, so that is the term that is matched.
+
+Folding accents would mean the program deciding on its own that other spellings are banned too. That changes what a term means: Vietnamese words that differ only by diacritics can be unrelated, so folding risks rejecting innocent listings, and R1 is an always-reject rule with no human review. If accented forms should be banned, the fix belongs in the data: add them to the keyword list, and the program picks them up without a code change.
 
 **Cost of being wrong:**
 
@@ -313,7 +322,7 @@ Reject it with `400 invalid_request`, naming the unknown field(s). Only `seller_
 
 **Rationale:**
 
-A field we silently drop is a field the client thinks we stored. A typo such as `price` instead of `price_vnd` is caught immediately instead of producing a confusing "price_vnd is required", and nothing we do not understand ever reaches moderation. When the contract grows, the new field is added to the accepted list deliberately. To decide differently we would need to know that clients send extra fields we must tolerate (e.g. a shared client library used against several services).
+A field we silently drop is a field the client thinks we stored. A typo such as `price` instead of `price_vnd` is caught immediately instead of producing a confusing "price_vnd is required", and nothing we do not understand ever reaches moderation. When the contract grows, the new field is added to the accepted list deliberately. To decide differently we would need to know that clients send extra fields we must tolerate.
 
 **Cost of being wrong:**
 

@@ -1,7 +1,16 @@
 # ARCHITECTURE.md
 
 How the Listing Moderation Service is laid out, and **why**. Business decisions
-referenced here (A1, A2 …) live in `ASSUMPTIONS.md`. 
+referenced here (A1, A2 …) live in `ASSUMPTIONS.md`.
+| Section |
+|--------------------|---------|
+| How the system is laid out | §1 Overview, §5 Flows |
+| Why | §3 (each choice with its reason, alternatives and cost), and the "why" column of §2 |
+| Where the boundaries are, and what is behind each one | §2 Boundaries |
+| Storage / messaging choice and reasoning | §3 |
+| What `/livez` and `/readyz` report | §7 |
+| What survives a worker restart and a full restart; supported topology | §8 |
+| What I would change first for production | §9 |
 
 ---
 
@@ -46,59 +55,114 @@ result. Listings escalated to `needs_human` are resolved through the moderator e
 - Nothing sets `expired` yet (A11). If added, it is a periodic guarded update
   `WHERE status='published' AND …`, never a moderation phase.
 
-## 2. Components and boundaries
+## 2. Boundaries, and what is behind each one
 
-| Component | Responsibility | Must not |
-|-----------|----------------|----------|
-| `routes/` | HTTP, request validation (spec limits), status codes, error shape `{error:{code,message}}` | contain business rules or SQL |
-| `services/` | Use cases: submit, get, list, human decision, process job. Own transaction boundaries. | build HTTP responses |
-| `rules/` | One pure function per rule: `(listing, context) → Reason[]` (empty when it does not fire) | do I/O |
-| `moderation/decide` | Combine rule results into one outcome using the precedence in ASSUMPTIONS (A1, A2, A5, A6). **Only place precedence exists.** | do I/O |
-| `repositories/` | All SQL, parameterised | make business decisions |
-| `reference/` | Seed data (sellers, categories, banned keywords) loaded and validated at startup | change at runtime |
-| `worker/` | Claim loop, lease renewal, retries, calling `services/processJob` | call the HTTP API |
+### 2.1 System boundaries
 
-Pure rules plus a single decision function mean every rule and every rule combination
-can be unit-tested without a database or HTTP server.
+| Boundary | What crosses it | What is behind it | Why the line is drawn here |
+|----------|-----------------|-------------------|----------------------------|
+| **HTTP API** (`openapi.yaml`) | Requests from sellers' clients and moderators; JSON responses and `{error:{code,message}}` | `src/routes/` → `src/services/` → `src/repositories/`, plus `src/http/` (validation, error handler, probes) | The only way in. All untrusted input is validated here, before anything is stored, and nothing internal (stack traces, SQL) goes back out. Moderators are **not** authenticated (§9). |
+| **API ↔ worker** (two processes, same image) | **Nothing directly.** They share only the `moderation_jobs` and `listings` tables; the worker never calls the API | Worker: `src/worker.js` → `src/worker/loop.js` → `src/services/moderation.js` → `src/moderation/decide.js` + `src/repositories/` | Accepting a listing must never wait for, or fail because of, moderation. Each side scales and restarts on its own (§8). |
+| **Application ↔ PostgreSQL** | Parameterised SQL, only from `src/repositories/` | Tables `listings`, `moderation_jobs`, `pgmigrations`; unique/check constraints, row and advisory locks | Every correctness guarantee lives here (§6), so it holds however many API or worker processes run. Application memory is never trusted for coordination. |
+| **Seed data** (`seed/*.json`) | Read once at startup, never written | `src/reference/seed.js`: validated, frozen in-memory maps | Read-only input from the brief. The process refuses to start if it is invalid, and the service follows it strictly (A12). |
+| **Pure decision core** (inside the worker) | In: a listing plus a `context` the caller loaded. Out: outcome + reasons | `src/rules/` (one function per rule) and `src/moderation/decide.js` | No I/O, so every rule and every combination is unit-tested without a database, and rule precedence exists in exactly one place. |
 
-## 3. Technology choices and reasoning
+### 2.2 Layers inside each process
+
+| Layer | Responsibility | Must not |
+|-------|----------------|----------|
+| `src/routes/` | HTTP: parse, validate (`src/http/validation.js`), pick status codes | contain business rules or SQL |
+| `src/services/` | Use cases: submit/get/list (`listings.js`), process one job (`moderation.js`), human decision (`review.js`). Own transaction boundaries. | build HTTP responses |
+| `src/rules/`, `src/moderation/decide.js` | Pure rules `(listing, context) → Reason[]`, and the precedence between them (A1, A2, A5, A6) | do I/O |
+| `src/repositories/` | All SQL (`listings.js`, `jobs.js`), parameterised | make business decisions |
+| `src/db/` | Connection pool, migrations, database readiness checks | contain domain logic |
+| `src/reference/` | Seed loading and validation | change at runtime |
+| `src/worker/` | Claim loop, polling, concurrency, graceful stop | call the HTTP API |
+
+## 3. Why it is built this way
+
+Each choice below says what was chosen, why, what was rejected, and what it costs.
+
+### 3.1 Technology choices
 
 **PostgreSQL for both storage and the job queue.**
-- The correctness guarantees (idempotency, one committed result per phase, one human
-  winner) are all about **atomic, conditional writes**. Postgres gives us unique
-  constraints, transactions and row locks, so these guarantees are enforced by the
-  database rather than by application code that could race.
-- Writing the listing and its job in **the same transaction** removes the dual-write
-  problem (listing saved but job lost, or the reverse) that a separate broker would
-  introduce.
-- `SELECT … FOR UPDATE SKIP LOCKED` lets several workers share the queue safely.
-- One dependency keeps `make run` well under the 180-second cold-start budget.
-- Trade-off: a Postgres-backed queue has lower throughput than a dedicated broker. That
-  is fine at this scale; see §9.
+- *Why:* every guarantee the brief asks for (idempotent submission, one committed result
+  per phase, one human winner) comes down to **atomic, conditional writes**. Postgres
+  enforces them itself with unique constraints, transactions and row locks, so they
+  hold however many processes run, instead of depending on application code that could
+  race.
+- *Why the queue too:* the listing and its job are written in **the same transaction**,
+  so a listing can never be saved without its job, or the reverse. With a separate
+  broker, that "dual write" can fail halfway and lose accepted work.
+- *Rejected:* Redis/BullMQ or RabbitMQ (a second system to run, the dual-write problem
+  above, and more images to pull inside the 180-second budget); an in-memory queue
+  (accepted work is lost on restart and cannot be shared between workers).
+- *Cost:* a Postgres queue handles less throughput than a dedicated broker. That only
+  matters at a volume far beyond this service; a broker could be added then.
 
-**Express on Node.js** — familiar, small, and enough for six endpoints.
+**Node.js 24 with Express 5.**
+- *Why:* the service is small and I/O-bound (HTTP in, SQL out), which Node handles well,
+  and Express is the most widely known Node web framework, so a new teammate can read
+  it on day one. Express 5 passes errors from `async` handlers to the error handler,
+  which keeps every error in one consistent format.
+- *Rejected:* larger frameworks (e.g. NestJS): more structure and build tooling than
+  six endpoints need, and slower image builds.
+- *Cost:* Express validates nothing by itself, so validation is written by hand
+  (`src/http/validation.js`) and tested directly.
 
-**`pg` (node-postgres) with plain SQL, no ORM.** The guarantees in §6 depend on exact
-statements (`INSERT … ON CONFLICT`, `UPDATE … WHERE status = 'pending'`,
-`FOR UPDATE SKIP LOCKED`). Writing them by hand keeps them visible and reviewable; an
-ORM would hide them and add build time. All SQL lives in `src/repositories/`.
+**`pg` (node-postgres) with plain SQL, no ORM.**
+- *Why:* the guarantees in §6 depend on exact statements (`INSERT … ON CONFLICT`,
+  `UPDATE … WHERE status = 'pending'`, `FOR UPDATE SKIP LOCKED`). Written by hand,
+  they are visible and reviewable. All SQL lives in `src/repositories/`.
+- *Rejected:* an ORM (Prisma, Sequelize). It would hide exactly the statements that
+  matter, and some add a build step.
+- *Cost:* more SQL to write and keep in step with the schema; repository tests against
+  real Postgres cover it.
 
-**node-pg-migrate for schema migrations.** Migrations are plain SQL files with an up and
-a down section, applied automatically at startup and recorded in `pgmigrations`. Chosen
-over a small hand-written runner because this is built as a production service: a
-maintained tool brings down-migrations for rollbacks, ordering checks, and handling of
-statements that cannot run in a transaction, which a long-lived schema will need. It
-takes a Postgres advisory lock (mode `wait`), so API and worker processes starting
-together apply each migration exactly once. Trade-off: one more dependency, and it does
-not detect edits to an already-applied file; the rule is "never edit, add a new one".
+**node-pg-migrate for schema migrations.**
+- *Why:* this is built as a service that will live for years. A maintained tool brings
+  down-migrations for rollbacks, ordering checks, and handling of statements that cannot
+  run in a transaction. Migrations stay plain SQL files with an up and a down section,
+  and its advisory lock (mode `wait`) lets the API and worker start together and still
+  apply each migration exactly once.
+- *Rejected:* a small hand-written runner (no dependency, but it would have to grow into
+  all of the above). See AI-NOTES.md.
+- *Cost:* one more dependency, and it does not detect edits to an already-applied file;
+  the rule is "never edit, add a new one".
 
-**API and worker as separate processes from the same image.** They scale and restart
-independently, and restart behaviour (§7) is easy to reason about and test. The worker
-loop can also be started in-process for integration tests.
+**API and worker as separate processes from the same image.**
+- *Why:* accepting a listing must never wait for, or fail because of, moderation; the
+  two scale and restart independently, which makes restart behaviour (§8) easy to reason
+  about. One image means one build and identical code in both.
+- *Rejected:* running the worker inside the API process (an API restart would also stop
+  moderation, and the two could not be scaled separately).
+- *Cost:* one more container in `make run`.
 
-**Seed data held in memory, read-only.** It is static, small, and needed on every
-request (422 checks) and every evaluation. Each process loads and validates it at
-startup and refuses to become ready if it is invalid.
+**Seed data held in memory, read-only.**
+- *Why:* it is small, never changes at runtime, and is needed on every request (422
+  checks) and every evaluation. Each process validates it at startup and refuses to
+  start if it is invalid, so a bad seed file can never cause a half-working service.
+- *Cost:* changing it means restarting the processes; §9 moves it to the database
+  later.
+
+### 3.2 Key design decisions
+
+- **Asynchronous with a durable job record.** The brief says moderation is not instant
+  and `POST` must not evaluate inline. A job row written with the listing means accepted
+  work survives any crash and is shared by any number of workers (§6).
+- **Correctness through guarded writes, not application checks.** Every result is
+  committed with `UPDATE … WHERE status = '<expected>'`. Whoever changes the row first
+  wins; everyone else matches 0 rows and knows it lost. This is simpler and safer than
+  checking first in code, which races, and needs no extra version column.
+- **Leases instead of heartbeats.** A claimed job belongs to its worker for 30 s. If the
+  worker dies, the lease simply runs out and another worker takes over. Evaluation takes
+  milliseconds, so no lease renewal is needed; the attempt number acts as a fencing
+  token, so a slow, stale worker can never change a reclaimed job (§5.2).
+- **A per-seller lock for duplicates (R3).** Duplicate checks only conflict within one
+  seller, so locking per seller keeps different sellers fully parallel while two
+  identical listings from the same seller are checked one at a time (A4).
+- **Polling instead of push.** An idle worker asks for jobs every 500 ms. It cannot miss
+  a job and needs no extra moving parts; the cost is up to half a second of delay.
 
 ## 4. Data model
 
@@ -140,9 +204,6 @@ disagree.
      has run), not a copy of the first response's `pending`: the response should be true
      when it is sent, and the original `id` is what makes the replay idempotent.
 3. No rules are evaluated here (including R4, see A2).
-
-The key comes from the required `Idempotency-Key` header; a request without it gets
-`400` (A8).
 
 ### 5.2 Automated moderation — worker
 
@@ -222,10 +283,10 @@ Plain reads. `decision` is `null` while `pending`. The list endpoint filters by
 
 R1–R5 make no external writes, so there are no external side effects to retry.
 
-### 6.1 Deferred: operator API for failed jobs (if time allows)
+### 6.1 Not built: operator API for failed jobs
 
-**Not in the current scope.** We will build it only if time remains after the
-required API, the guarantees above and the tests are done.
+**Cut for the one-day timebox**; it is near the top of the production list (§9). What it
+would look like:
 
 - `GET /v1/admin/moderation-jobs?state=failed` — list failed jobs with `listing_id`,
   `attempts`, `last_error` and timestamps.
@@ -266,25 +327,19 @@ published on host port `${PORT:-8080}`.
 
 ## 9. What I would change first for production
 
-1. **Moderator authentication and audit.** `moderator_id` is currently trusted as sent.
-   Add auth and an append-only decision history table.
-2. **Reference data from the database**, with an admin path to update banned keywords,
-   categories and sellers without redeploying.
-3. **Operator tooling:** the deferred admin API in §6.1, with authentication.
-4. **Metrics and alerts:** queue depth, oldest `queued` job age, `failed` count,
-   decision latency, outcome rates per rule.
-5. **Retention and expiry jobs**, and partitioning `listings` once volume grows.
-6. **A dedicated broker** (e.g. SQS/Kafka with an outbox table) only if Postgres queue
-   throughput becomes the bottleneck. The outbox keeps the "listing + job in one
-   transaction" guarantee.
-7. **Connection pooling** (PgBouncer) once API and worker instances multiply.
-8. **Push instead of poll:** Postgres `LISTEN/NOTIFY` from the API to wake workers at
-   once, keeping polling as the fallback. Polling every 500 ms is fine at this scale.
-9. **Migrations as a deploy step**, run once before new instances start, instead of by
-   every process at startup. Startup migration is convenient for `make run`, but in
-   production it couples rollouts to schema changes.
-10. **Restart policies and health-based routing** from an orchestrator. `make run`
-    deliberately stops everything if one container exits, which is right for a local
-    run and wrong for production.
-11. **Retention for `moderation_jobs`**: `done` rows are only bookkeeping and can be
-    deleted after a while; `failed` rows stay until handled.
+In order of importance:
+
+1. **Authentication.** Anyone who can reach the API can submit listings or act as a
+   moderator: `moderator_id` is trusted as sent. Moderators and clients must log in, and
+   only moderators may call the decision endpoint.
+2. **A decision history.** Only the current decision is stored. Keep every automated
+   and human decision (who, what, when) in an append-only table, so any outcome can be
+   traced and audited later.
+3. **Monitoring and alerts.** Failed jobs are stored and queryable (A7), but nobody is
+   told. Alert on failed jobs, on listings waiting too long, and on error rates.
+4. **An admin screen or API for failed jobs** (§6.1), so retrying one does not mean
+   running SQL by hand.
+5. **Banned keywords, sellers and categories in the database**, with a way for staff to
+   update them. Today they come from the seed files, so every change needs a redeploy.
+6. **Listing expiry.** Published listings never expire today (A11); add the expiry rule
+   once the business defines a listing's lifetime.
