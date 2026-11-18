@@ -19,7 +19,7 @@ export function createListingsRouter({ listingService, reviewService }) {
   const router = Router();
 
   router.post('/v1/listings', async (req, res) => {
-    // A16: all 400 checks first (key, then body).
+    // All 400 checks first (key, then body); see ARCHITECTURE.md §5.1.
     const key = validateIdempotencyKey(req.get('Idempotency-Key'));
     const listing = validateListingRequest(req.body);
     const { httpStatus, body } = await listingService.submit(key, listing);
@@ -38,7 +38,7 @@ export function createListingsRouter({ listingService, reviewService }) {
   });
 
   if (reviewService) {
-    // Human resolution: 200 for the single winning request, 409 otherwise (A25).
+    // Human resolution: 200 for the single winning request, 409 otherwise (ARCHITECTURE.md §5.3).
     router.post('/v1/listings/:id/decision', async (req, res) => {
       const request = validateDecisionRequest(req.body);
       res.json(await reviewService.decide(req.params.id, request));

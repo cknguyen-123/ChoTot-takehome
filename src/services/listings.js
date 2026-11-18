@@ -19,7 +19,7 @@ export function requestHash(l) {
 /**
  * R3 comparison key (A3): same category and price, and the same title and
  * description ignoring case and leading/trailing whitespace. The seller is a
- * separate column. Used only for comparison; the listing is stored as sent (A15).
+ * separate column. Used only for comparison; the listing is stored as sent (A14).
  */
 export function dedupKey(l) {
   const norm = (s) => s.trim().toLowerCase();
@@ -58,7 +58,7 @@ export function createListingService({ pool, seed, logger }) {
      * @returns {Promise<{httpStatus: 200|202, body: {id: string, status: string}}>}
      */
     async submit(submissionKey, listing) {
-      // A16: 422 before touching the database, so an unknown reference never
+      // 422 before touching the database (ARCHITECTURE.md §5.1), so an unknown reference never
       // consumes the idempotency key.
       if (!seed.sellers.has(listing.sellerId)) {
         throw new AppError(422, 'unknown_seller', `Seller "${listing.sellerId}" does not exist`);
@@ -81,7 +81,7 @@ export function createListingService({ pool, seed, logger }) {
         return { httpStatus: 202, body };
       }
       if (result.requestHash === hash) {
-        // A17: a replay reports the listing's current status.
+        // A replay reports the listing's current status (ARCHITECTURE.md §5.1).
         return { httpStatus: 200, body };
       }
       throw new AppError(

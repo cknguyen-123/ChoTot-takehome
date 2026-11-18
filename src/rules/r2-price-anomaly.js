@@ -1,8 +1,8 @@
 // R2 — price anomaly. More than 3x, or less than one-third of, the category
-// median goes to needs_human. Exact boundaries do not fire; price 0 does (A22).
+// median goes to needs_human. Exact boundaries do not fire; price 0 does (A18).
 //
 // Integer arithmetic only, via BigInt: price x 3 can exceed
-// Number.MAX_SAFE_INTEGER for the largest allowed prices (A14).
+// Number.MAX_SAFE_INTEGER for the largest allowed prices.
 
 const vnd = (n) => `${n.toLocaleString('en-US')} VND`;
 

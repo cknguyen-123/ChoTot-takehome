@@ -35,7 +35,7 @@ describe('validateListingRequest', () => {
     rejects400(() => validateListingRequest({ title: 'x' }), /seller_id, description, price_vnd, category_id/);
   });
 
-  describe('price_vnd (A14)', () => {
+  describe('price_vnd', () => {
     for (const ok of [0, 1, Number.MAX_SAFE_INTEGER]) {
       it(`accepts ${ok}`, () => assert.equal(validateListingRequest({ ...valid(), price_vnd: ok }).priceVnd, ok));
     }
@@ -61,7 +61,7 @@ describe('validateListingRequest', () => {
       rejects400(() => validateListingRequest({ ...valid(), description: 'y'.repeat(5001) }), /description/);
       assert.equal(validateListingRequest({ ...valid(), description: '' }).description, '');
     });
-    it('keeps whitespace exactly as sent (A15)', () => {
+    it('keeps whitespace exactly as sent (A14)', () => {
       assert.equal(validateListingRequest({ ...valid(), title: '   ' }).title, '   ');
       assert.equal(validateListingRequest({ ...valid(), title: '  Phone ' }).title, '  Phone ');
     });

@@ -210,7 +210,7 @@ describe('worker (real Postgres)', { skip: dbSkip }, () => {
       assert.equal(statuses.filter((s) => s === 'auto_rejected').length, 4);
     });
 
-    it('a listing decided first wins even if it was submitted later (A4 refinement)', async () => {
+    it('a listing decided first wins even if it was submitted later (A4)', async () => {
       // B is created first but becomes visible late (its transaction committed
       // after A was already decided): simulated by back-dating B.
       const a = await submit();

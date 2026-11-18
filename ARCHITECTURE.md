@@ -121,14 +121,24 @@ disagree.
 ## 5. Request and processing flows
 
 ### 5.1 Submit — `POST /v1/listings`
-1. Validate the `Idempotency-Key` header and the body (400), then check `seller_id` /
-   `category_id` against seed data (422). This order (A16) means a rejected request
-   never consumes its key.
+1. Validate the `Idempotency-Key` header (A8) and the body (400), then check `seller_id` /
+   `category_id` against seed data (422).
+   - **Validation rules:** unknown fields rejected (A13); every field must already have the
+     spec's JSON type, with no coercion (`"1000"` or `12.5` for `price_vnd` → 400);
+     `price_vnd` is an integer from 0 to `Number.MAX_SAFE_INTEGER`, so every price stays
+     exact in JavaScript and R2's integer arithmetic; title/description lengths count
+     Unicode characters, as JSON Schema and Postgres do; text is stored as sent (A14).
+   - **Error order 400 → 422 → 409/200:** checks that need no database run first, so a
+     request that is invalid or refers to unknown data is never stored and never consumes
+     its idempotency key; the client can fix it and retry with the same key.
 2. In one transaction:
    `INSERT INTO listings … ON CONFLICT (submission_key) DO NOTHING RETURNING id`.
    - Inserted → also `INSERT INTO moderation_jobs`; respond **202** `{id, status}`.
-   - Conflict → read the existing row; same `request_hash` → **200** with the stored
+   - Conflict → read the existing row; same `request_hash` → **200** with
      `{id, status}`; different hash → **409**.
+   - A replay returns the listing's **current** status (e.g. `published` once moderation
+     has run), not a copy of the first response's `pending`: the response should be true
+     when it is sent, and the original `id` is what makes the replay idempotent.
 3. No rules are evaluated here (including R4, see A2).
 
 The key comes from the required `Idempotency-Key` header; a request without it gets
@@ -151,7 +161,7 @@ Code: `src/worker.js` (process), `src/worker/loop.js` (polling loop),
    - Take `pg_advisory_xact_lock(1, hashtext(seller_id))`: R3 checks and commits for
      one seller run one at a time (released at COMMIT).
    - Load the seller's identical active listings that were already decided, or are
-     pending and older (A4 refinement), then run `decide()` (pure).
+     pending and older (A4), then run `decide()` (pure).
    - `UPDATE listings SET status, decision, decided_at WHERE id = $1 AND status = 'pending'`.
      0 rows → another attempt or a moderator committed first; our result is discarded.
    - Mark the job `done`.
@@ -173,14 +183,20 @@ the `status='pending'` guard make its late result harmless.
 Code: `src/services/review.js`, `commitHumanDecision` in `src/repositories/listings.js`.
 The service records the moderator's choice; it decides nothing itself.
 
-1. Validate the body (400, A24).
+1. Validate the body (400), with the same strictness as listing submissions (A13–A14):
+   unknown fields rejected, no type coercion, `moderator_id` 1–200 characters, `note` at
+   most 5000. `moderator_id` is trusted as sent (no authentication).
 2. One statement: `UPDATE listings SET status = published|rejected, decision = …,
    decided_at = now(), decided_by = $moderator WHERE id = $1 AND status = 'needs_human'
    RETURNING …`. The new `decision` is built inside the same `UPDATE` from the row it
    replaces, so the escalation reasons are copied into the `HUMAN` reason's
-   `detail.escalation_reasons` without a read-then-write gap (A23).
+   `detail.escalation_reasons` without a read-then-write gap. The stored decision is
+   `{outcome, reasons: [{rule_id: "HUMAN", message: "approved by moderator m-1: <note>",
+   detail: {moderator_id, note, escalation_reasons}}]}`: the HUMAN reason is what decided
+   the outcome (A15), and "why was this reviewed?" is never lost.
 3. One row → **200** with the listing. Zero rows → look the listing up: missing → **404**,
-   otherwise **409** (A25).
+   otherwise **409**. Checks run 400 → 404 → 409, for the same reason as in §5.1: checks that
+   need no database come first.
 
 Concurrent requests: the first `UPDATE` takes the row lock; the others wait, then
 re-check `status = 'needs_human'`, find it changed, and match 0 rows. Exactly one wins;
@@ -200,9 +216,9 @@ Plain reads. `decision` is `null` while `pending`. The list endpoint filters by
 | Stale attempt never overwrites a result or a human decision | Same guard: once status left `pending`, no automated write can match |
 | One winner among concurrent human decisions | `UPDATE … WHERE status='needs_human'` |
 | Accepted work is not left unprocessed | Job written in the same transaction as the listing; lease expiry re-queues crashed claims; bounded retries with backoff |
-| Two identical listings never both published, never both rejected (R3) | Per-seller advisory lock around check + commit; "decided first, then submitted first" tie-break (A4 refinement) |
+| Two identical listings never both published, never both rejected (R3) | Per-seller advisory lock around check + commit; "decided first, then submitted first" tie-break (A4) |
 | Failures reach an operator | Jobs end in `failed` with `last_error` and are logged at error level. In the current scope an operator finds them by querying `moderation_jobs` directly (A7). An admin API is deferred (§6.1). |
-| Decisions are explainable | Each rule that decided the outcome adds a `Reason {rule_id, message, detail}` (A18); R1's message quotes the seed term (A20); approvals carry an R4 or `PASS` reason (A19) |
+| Decisions are explainable | Each rule that decided the outcome adds a `Reason {rule_id, message, detail}` (A15); R1 gives one reason per matched term, quoting the term exactly as the seed file writes it in `message`, as the spec requires, and naming the field(s) it was found in; approvals carry an R4 or `PASS` reason (A16) |
 
 R1–R5 make no external writes, so there are no external side effects to retry.
 

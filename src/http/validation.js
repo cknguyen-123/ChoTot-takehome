@@ -1,7 +1,7 @@
 // Request validation for the /v1/listings endpoints. Pure functions: each returns
 // the validated value or throws AppError(400). Rules come from openapi.yaml plus
-// ASSUMPTIONS A8 (Idempotency-Key), A13 (unknown fields), A14 (strict types),
-// A15 (no trimming).
+// ASSUMPTIONS A8 (Idempotency-Key), A13 (unknown fields), strict types (ARCHITECTURE.md §5.1),
+// A14 (no trimming).
 
 import { AppError } from './errors.js';
 
@@ -61,7 +61,7 @@ export function validateListingRequest(body) {
   if (typeof sellerId !== 'string') throw invalid('seller_id must be a string');
   if (typeof categoryId !== 'string') throw invalid('category_id must be a string');
 
-  // A15: validated and stored exactly as sent, no trimming.
+  // A14: validated and stored exactly as sent, no trimming.
   if (typeof title !== 'string' || charLength(title) < 1 || charLength(title) > TITLE_MAX) {
     throw invalid(`title must be a string of 1-${TITLE_MAX} characters`);
   }
@@ -69,7 +69,7 @@ export function validateListingRequest(body) {
     throw invalid(`description must be a string of at most ${DESCRIPTION_MAX} characters`);
   }
 
-  // A14: an integer JSON number, no strings, no fractions; capped so it stays exact.
+  // An integer JSON number, no strings, no fractions; capped so it stays exact.
   if (typeof priceVnd !== 'number' || !Number.isSafeInteger(priceVnd) || priceVnd < 0) {
     throw invalid(`price_vnd must be an integer between 0 and ${Number.MAX_SAFE_INTEGER}`);
   }
@@ -81,7 +81,7 @@ const DECISION_FIELDS = ['decision', 'moderator_id', 'note'];
 const MODERATOR_ID_MAX = 200;
 const NOTE_MAX = 5000;
 
-/** POST /v1/listings/{id}/decision body (A24). Returns camelCase fields. */
+/** POST /v1/listings/{id}/decision body (same strictness as A13–A14; ARCHITECTURE.md §5.3). Returns camelCase fields. */
 export function validateDecisionRequest(body) {
   if (!isPlainObject(body)) throw invalid('Request body must be a JSON object');
 

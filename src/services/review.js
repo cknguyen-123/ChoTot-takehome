@@ -38,7 +38,7 @@ export function createReviewService({ pool, logger }) {
       }
 
       // Nothing changed: either there is no such listing, or it is not (or no
-      // longer) awaiting review, e.g. another moderator won the race (A25).
+      // longer) awaiting review, e.g. another moderator won the race (ARCHITECTURE.md §5.3).
       const current = await findListingById(pool, id);
       if (!current) throw new AppError(404, 'not_found', `Listing ${id} not found`);
       throw new AppError(

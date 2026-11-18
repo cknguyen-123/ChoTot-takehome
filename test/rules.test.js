@@ -48,7 +48,7 @@ describe('R1 banned keywords', () => {
     assert.deepEqual(r1('fake2'), [], 'digits are word characters too');
   });
 
-  it('matches multi-word terms, with any whitespace between the words (A21)', () => {
+  it('matches multi-word terms, with any whitespace between the words (A17)', () => {
     for (const title of ['hang gia', 'Ban HANG GIA re', 'hang  gia', 'hang\ngia', 'hang\tnhai']) {
       assert.equal(r1(title).length, 1, JSON.stringify(title));
     }
@@ -61,12 +61,12 @@ describe('R1 banned keywords', () => {
     assert.deepEqual(r1('hàng nhái'), []);
   });
 
-  it('checks the description too, and names both fields when both match (A20)', () => {
+  it('checks the description too, and names both fields when both match', () => {
     assert.equal(r1('Nice bag', 'it is fake')[0].message, 'description contains banned term "fake"');
     assert.equal(r1('fake bag', 'totally fake')[0].message, 'title and description contain banned term "fake"');
   });
 
-  it('gives one reason per matched term (A20)', () => {
+  it('gives one reason per matched term', () => {
     assert.deepEqual(matchedTerms(r1('stolen replica', 'fake')), ['replica', 'fake', 'stolen']);
   });
 
@@ -87,7 +87,7 @@ describe('R2 price anomaly', () => {
   const category = { id: 'c-phones', medianPriceVnd: 6_000_000 };
   const r2 = (price) => r2PriceAnomaly({ price_vnd: price }, { category });
 
-  it('does not fire at exactly 3x or exactly one-third (A22)', () => {
+  it('does not fire at exactly 3x or exactly one-third (A18)', () => {
     assert.deepEqual(r2(18_000_000), []);
     assert.deepEqual(r2(2_000_000), []);
     assert.deepEqual(r2(6_000_000), []);
@@ -98,7 +98,7 @@ describe('R2 price anomaly', () => {
     assert.equal(r2(1_999_999)[0].detail.direction, 'below');
   });
 
-  it('fires for price 0 (A22)', () => {
+  it('fires for price 0 (A18)', () => {
     const [reason] = r2(0);
     assert.equal(reason.rule_id, 'R2');
     assert.equal(reason.message, 'price 0 VND is less than one-third of the c-phones median of 6,000,000 VND');

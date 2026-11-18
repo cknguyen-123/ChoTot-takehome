@@ -105,7 +105,7 @@ describe('/v1/listings (real Postgres)', { skip: dbSkip }, () => {
       assert.equal(afterCount, before);
     });
 
-    it('400 for an unknown field (A13), a wrong type (A14) and a missing field', async () => {
+    it('400 for an unknown field (A13), a wrong type and a missing field', async () => {
       await expectError(await submit(body({ color: 'red' })), 400, 'invalid_request');
       await expectError(await submit(body({ price_vnd: '6000000' })), 400, 'invalid_request');
       const { title, ...noTitle } = body();
@@ -127,7 +127,7 @@ describe('/v1/listings (real Postgres)', { skip: dbSkip }, () => {
       await expectError(await submit(body({ category_id: 'c-boats' })), 422, 'unknown_category');
     });
 
-    it('error precedence (A16): 400 before 422, 422 does not consume the key', async () => {
+    it('error precedence: 400 before 422, 422 does not consume the key', async () => {
       await expectError(await submit(body({ seller_id: 's-9999', color: 'x' })), 400, 'invalid_request');
       const key = randomUUID();
       await expectError(await submit(body({ seller_id: 's-9999' }), { key }), 422, 'unknown_seller');

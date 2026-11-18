@@ -17,7 +17,7 @@ import { startTestServer } from './helpers/http.js';
 
 const SETTINGS = { concurrency: 1, pollIntervalMs: 10, leaseMs: 30_000, maxAttempts: 3, backoffBaseMs: 0, backoffMaxMs: 0 };
 
-describe('validateDecisionRequest (A24)', () => {
+describe('validateDecisionRequest', () => {
   const ok = { decision: 'approve', moderator_id: 'm-1' };
   const rejects400 = (body, message) =>
     assert.throws(() => validateDecisionRequest(body), (e) => e.status === 400 && message.test(e.message));
@@ -94,7 +94,7 @@ describe('POST /v1/listings/{id}/decision (real Postgres)', { skip: dbSkip }, ()
     assert.equal((await res.json()).error.code, code);
   }
 
-  it('approve → 200 with the full Listing, published, HUMAN reason keeps the escalation reasons (A23)', async () => {
+  it('approve → 200 with the full Listing, published, HUMAN reason keeps the escalation reasons', async () => {
     const id = await escalated();
     const before = await listings.get(id);
     const res = await decide(id, { decision: 'approve', moderator_id: 'm-1', note: 'checked ID by phone' });
@@ -165,7 +165,7 @@ describe('POST /v1/listings/{id}/decision (real Postgres)', { skip: dbSkip }, ()
     await expectError(await decide('not-a-uuid', body), 404, 'not_found');
   });
 
-  it('error order 400 → 404 → 409 (A25)', async () => {
+  it('error order 400 → 404 → 409', async () => {
     await expectError(await decide(randomUUID(), { decision: 'maybe', moderator_id: 'm-1' }), 400, 'invalid_request');
     const published = await submit({ sellerId: 's-1001' });
     await drain();

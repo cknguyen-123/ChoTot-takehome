@@ -7,8 +7,8 @@
 //   2. R4 trusted seller (>= 80) → approved  (R2, R3, R5 not applied, A2/A6)
 //   3. R3 duplicate              → rejected
 //   4. R2 price and/or R5 unverified → escalated (both reported if both fire)
-//   5. nothing fired             → approved with a PASS reason (A19)
-// Only the rules that determined the outcome are reported (A18).
+//   5. nothing fired             → approved with a PASS reason (A16)
+// Only the rules that determined the outcome are reported (A15).
 // An approval is published in the same commit (A10).
 
 import { r1BannedKeywords } from '../rules/r1-banned-keywords.js';

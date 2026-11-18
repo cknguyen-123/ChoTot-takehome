@@ -33,7 +33,7 @@ const rules = (decision) => decision.reasons.map((r) => r.rule_id);
 
 describe('decide', () => {
   describe('ordinary verified seller (s-1002, trust 64)', () => {
-    it('clean listing → approved and published, with a PASS reason (A10, A19)', () => {
+    it('clean listing → approved and published, with a PASS reason (A10, A16)', () => {
       const d = run('s-1002');
       assert.equal(d.outcome, 'approved');
       assert.equal(d.status, 'published');
@@ -54,7 +54,7 @@ describe('decide', () => {
   });
 
   describe('precedence between rules (A5)', () => {
-    it('R1 beats R3 and R2, and only R1 is reported (A18)', () => {
+    it('R1 beats R3 and R2, and only R1 is reported (A15)', () => {
       assert.deepEqual(rules(run('s-1002', { ...BANNED, ...ODD_PRICE }, DUPLICATE)), ['R1']);
     });
     it('R3 beats R2 and R5: rejection wins over escalation', () => {

@@ -1,7 +1,7 @@
 // R1 — banned keywords. A title or description containing a term from
 // seed/banned_keywords.json is always rejected.
 //
-// Matching (A12, A20, A21):
+// Matching (A12, A17):
 // - case-insensitive;
 // - whole words only, with Unicode-aware boundaries. JavaScript's \b treats
 //   accented letters as non-word characters, so "fake" would match inside
@@ -32,7 +32,7 @@ const FIELDS = ['title', 'description'];
 /**
  * @param {{title: string, description: string}} listing
  * @param {{bannedTerms: ReturnType<typeof compileBannedTerms>}} context
- * @returns {object[]} one Reason per matched term (A20); empty if none.
+ * @returns {object[]} one Reason per matched term; empty if none.
  */
 export function r1BannedKeywords(listing, { bannedTerms }) {
   const reasons = [];

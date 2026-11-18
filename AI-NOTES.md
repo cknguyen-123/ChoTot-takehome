@@ -38,7 +38,7 @@ How AI tools were used on this take-home. Written as the work happens, not after
   both being published. While implementing it, the model noticed this is not enough:
   `created_at` is when a transaction *starts*, so a listing can be older but become
   visible only after the newer one was already published, and then both would be
-  published. Fixed by counting already-decided duplicates first (A4 refinement). Then
+  published. Fixed by counting already-decided duplicates first (A4 was updated to match). Then
   it checked that the tests actually guard this: it removed the lock and the
   `status = 'pending'` guard one at a time and confirmed a test fails each time. The
   first version of the tests passed *without* the lock; a deterministic test that holds
@@ -58,7 +58,7 @@ The agent listed five gaps in the brief with a recommendation each; I decided
 | A9 | `draft` in the diagram but not the enum | Client-side state, never stored | Agreed |
 | A10 | When `auto_approved` becomes `published` | Same transaction as the approval | Agreed |
 | A11 | What triggers `expired` | Out of scope, nothing sets it | Agreed |
-| A23–A25 | Human decisions: stored shape, validation, error order | HUMAN reason keeping escalation reasons; same strictness as submissions; 400 → 404 → 409 | Agreed |
+| Phase 6 | Human decisions: stored shape, validation, error order (kept as design choices in ARCHITECTURE §5.3, not assumptions) | HUMAN reason keeping escalation reasons; same strictness as submissions; 400 → 404 → 409 | Agreed |
 | **A12** | **Should `hàng giả` match the banned term `hang gia`?** | **Yes — strip diacritics before matching** | **Disagreed: no folding, match the seed term as written** |
 
 **Where I disagreed (A12).** The model argued that Vietnamese sellers type both
@@ -72,15 +72,15 @@ known cost (accented spellings slip through) is written down in A12.
 *ignoring* request fields the spec does not define, so older or newer clients keep
 working. I chose to **reject them with 400**: a silently dropped field is one the
 client believes was stored, and a typo like `price` for `price_vnd` should fail loudly.
-I accepted its other four Phase 3 recommendations (strict types, no trimming, error
-order 400 → 422 → 409/200, replay returns the current status; A14–A17).
+I accepted its other four Phase 3 recommendations: strict types, no trimming (A14),
+error order 400 → 422 → 409/200, and a replay returning the current status.
 
-**Where I disagreed (which reasons to report, Phase 4, A18).** The model recommended
+**Where I disagreed (which reasons to report, Phase 4, A15).** The model recommended
 listing *every* rule that fired, marking the overridden ones. I chose to report **only
 the rules that decided the outcome**: `reasons` should answer "why is it here?"
 without the moderator having to work out which reasons mattered. Accepted its other
-four Phase 4 recommendations (A19–A22: an explicit `PASS` reason, one R1 reason per
-term, any whitespace inside multi-word terms, price 0 escalates under R2).
+four Phase 4 recommendations: an explicit `PASS` reason (A16), one R1 reason per
+term, any whitespace inside multi-word terms (A17), and price 0 escalating under R2 (A18).
 
 **Where I disagreed (migration tool, Phase 2).** The model recommended a ~80-line
 hand-written migration runner (no dependency, every line explainable in review) over

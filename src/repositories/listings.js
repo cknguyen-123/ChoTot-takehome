@@ -82,7 +82,7 @@ export async function lockSellerForDuplicateCheck(client, sellerId) {
 }
 
 /**
- * The active listings this one counts as a duplicate of (A3, A4 as refined):
+ * The active listings this one counts as a duplicate of (A3, A4):
  * same seller and dedup key, active, and either
  *   - already decided (needs_human / published / auto_approved): it got there first, or
  *   - still pending but submitted earlier (created_at, then id).
@@ -124,7 +124,7 @@ export async function commitAutomatedDecision(client, { id, status, decision }) 
  *
  * The new decision is built inside the same UPDATE from the row being
  * replaced: the escalation reasons are copied into the human reason's
- * detail.escalation_reasons (A23). No read-then-write gap.
+ * detail.escalation_reasons (ARCHITECTURE.md §5.3). No read-then-write gap.
  *
  * @param {{id: string, status: 'published'|'rejected', outcome: 'approved'|'rejected',
  *          reason: {rule_id: string, message: string, detail: object}, moderatorId: string}} d

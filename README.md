@@ -103,7 +103,7 @@ any test fails. Each run uses its own Compose project, so it never touches a run
 - Trusted sellers (R4) bypass the duplicate check, so a trusted seller's identical
   listings are all published (A2).
 - Only the current decision is stored; a human decision keeps the escalation reasons
-  that led to it, but there is no full decision history (A23).
+  that led to it, but there is no full decision history (ARCHITECTURE.md §5.3).
 - Failed moderation jobs are visible by querying the database, not through an API
   (A7, ARCHITECTURE.md §6.1). With `make run` going:
 

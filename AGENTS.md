@@ -104,8 +104,8 @@ decision function); never duplicate it in routes, SQL or the worker.
   submission key is reused with a **different** body; **400** for invalid bodies;
   **422** if `seller_id` or `category_id` does not exist in the seed data.
   The key is the **required `Idempotency-Key` header** (A8). Unknown body fields → 400
-  (A13); no type coercion, `price_vnd` ≤ `Number.MAX_SAFE_INTEGER` (A14); no trimming
-  (A15); check order 400 → 422 → 409/200 (A16); a replay returns the current status (A17).
+  (A13); no type coercion, `price_vnd` ≤ `Number.MAX_SAFE_INTEGER`; no trimming
+  (A14); check order 400 → 422 → 409/200 (ARCHITECTURE §5.1); a replay returns the current status (ARCHITECTURE §5.1).
 - `GET /v1/listings` (list, filters `seller_id`, `status`, `limit` 1–100 default 20,
   **newest first**) is defined in the spec, so it must be implemented.
 - `GET /v1/listings/{id}` → 200 or 404. `decision` is `null` while `pending`; once
@@ -152,7 +152,7 @@ by the **database**, not by checks in application memory.
    approved, and must not reject each other. Define the tie-break (see ASSUMPTIONS) and
    enforce it in a transaction or with a lock, not by an unguarded read.
 7. **Rules are pure.** Each rule is a function `(listing, context) → Reason[]` (empty when
-   it does not fire; R1 returns one Reason per matched term, A20) with
+   it does not fire; R1 returns one Reason per matched term) with
    no I/O. Data it needs (seller, category median, existing listings) is loaded by the
    caller. This keeps rules unit-testable and lets the decision function be one place.
 
@@ -236,13 +236,12 @@ Do not duplicate content across files; link instead.
   not contain "fake" at all, so it passed with the naive `\b` too. Caught by running the
   naive pattern against the test inputs. Rule: for a boundary test, check that the
   *wrong* implementation fails it.
-- Only the rules that decided the outcome go in `reasons` (A18); do not add overridden
+- Only the rules that decided the outcome go in `reasons` (A15); do not add overridden
   rules "for completeness".
 - **(Phase 5, real)** The original R3 design (lock per seller + "earlier `created_at`
   wins") still allowed two identical listings to both be published: `created_at` is the
   transaction *start*, so a listing can be older but become visible after the newer one
-  was already decided. Fix: already-decided active duplicates always count (A4
-  refinement). Do not "simplify" the duplicate query back to a `created_at` comparison.
+  was already decided. Fix: already-decided active duplicates always count (A4). Do not "simplify" the duplicate query back to a `created_at` comparison.
 - Every job write after a claim must carry `WHERE attempts = <claim's attempt> AND
   state = 'running'` (fencing). Without it a stale worker can reset a reclaimed job.
 - Concurrency tests that pass are not proof: remove the lock or guard and check that a
