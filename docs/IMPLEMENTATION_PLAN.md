@@ -88,10 +88,14 @@ submissions (PASS, R1, R5, R3) within a second.
 
 ## Phase 6: Human Review
 
-- [ ] Task 6.1: Implement human decision API
-- [ ] Task 6.2: Validate moderation decisions
-- [ ] Task 6.3: Handle conflicting decisions
-- [ ] Task 6.4: Test human review workflow
+Decisions A23–A25 as proposed. Verified: `make test` → 174/174 pass; removing the
+`status = 'needs_human'` guard makes three tests fail; on `make run`'s stack a `curl`
+submission went `needs_human` → approved by `m-1` (200) → second moderator 409.
+
+- [x] Task 6.1: Implement human decision API — `POST /v1/listings/{id}/decision`, `src/services/review.js`
+- [x] Task 6.2: Validate moderation decisions — `validateDecisionRequest` (A24), error order 400 → 404 → 409 (A25)
+- [x] Task 6.3: Handle conflicting decisions — single guarded `UPDATE … WHERE status = 'needs_human'`
+- [x] Task 6.4: Test human review workflow — `test/api-decision.test.js` (10 concurrent moderators, repeats, every status, stale worker end to end)
 
 ## Phase 7: Integration and Finalization
 

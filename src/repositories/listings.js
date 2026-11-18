@@ -118,6 +118,38 @@ export async function commitAutomatedDecision(client, { id, status, decision }) 
 }
 
 /**
+ * Commits the one human result (AGENTS.md §6.4). Only a listing still in
+ * needs_human matches, so among concurrent or repeated requests exactly one
+ * changes the row; the rest get null and the caller answers 404 or 409.
+ *
+ * The new decision is built inside the same UPDATE from the row being
+ * replaced: the escalation reasons are copied into the human reason's
+ * detail.escalation_reasons (A23). No read-then-write gap.
+ *
+ * @param {{id: string, status: 'published'|'rejected', outcome: 'approved'|'rejected',
+ *          reason: {rule_id: string, message: string, detail: object}, moderatorId: string}} d
+ * @returns {Promise<object|null>} the updated listing, or null if nothing changed
+ */
+export async function commitHumanDecision(pool, d) {
+  if (typeof d.id !== 'string' || !UUID_PATTERN.test(d.id)) return null;
+  const { rows } = await pool.query(
+    `UPDATE listings
+        SET status = $2,
+            decision = jsonb_build_object(
+              'outcome', $3::text,
+              'reasons', jsonb_build_array(
+                jsonb_set($4::jsonb, '{detail,escalation_reasons}',
+                          COALESCE(decision->'reasons', '[]'::jsonb)))),
+            decided_at = now(),
+            decided_by = $5
+      WHERE id = $1 AND status = 'needs_human'
+      RETURNING ${LISTING_COLUMNS}`,
+    [d.id, d.status, d.outcome, JSON.stringify(d.reason), d.moderatorId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * Newest first; optional filters. `limit` is validated by the caller (1–100).
  * Ties on created_at are broken by id so the order is stable.
  */

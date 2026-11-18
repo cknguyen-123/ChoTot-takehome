@@ -170,10 +170,22 @@ running after 30 s is treated as abandoned. If it was only slow, the fencing tok
 the `status='pending'` guard make its late result harmless.
 
 ### 5.3 Human resolution — `POST /v1/listings/{id}/decision`
-`UPDATE listings SET status = published|rejected, decision = …, decided_at = now(),
-decided_by = $moderator WHERE id = $1 AND status = 'needs_human' RETURNING *`.
-One row → **200** with the listing. Zero rows → 404 if the listing does not exist,
-otherwise **409**. Concurrent requests: the row lock lets exactly one win.
+Code: `src/services/review.js`, `commitHumanDecision` in `src/repositories/listings.js`.
+The service records the moderator's choice; it decides nothing itself.
+
+1. Validate the body (400, A24).
+2. One statement: `UPDATE listings SET status = published|rejected, decision = …,
+   decided_at = now(), decided_by = $moderator WHERE id = $1 AND status = 'needs_human'
+   RETURNING …`. The new `decision` is built inside the same `UPDATE` from the row it
+   replaces, so the escalation reasons are copied into the `HUMAN` reason's
+   `detail.escalation_reasons` without a read-then-write gap (A23).
+3. One row → **200** with the listing. Zero rows → look the listing up: missing → **404**,
+   otherwise **409** (A25).
+
+Concurrent requests: the first `UPDATE` takes the row lock; the others wait, then
+re-check `status = 'needs_human'`, find it changed, and match 0 rows. Exactly one wins;
+repeats get 409. A late automated attempt cannot overwrite the human result, because
+its own guard requires `status = 'pending'`.
 
 ### 5.4 Read — `GET /v1/listings/{id}` and `GET /v1/listings`
 Plain reads. `decision` is `null` while `pending`. The list endpoint filters by

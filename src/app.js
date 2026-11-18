@@ -16,8 +16,11 @@ const JSON_BODY_LIMIT = '64kb';
  * @param {Array<{name: string, run: () => unknown}>} [deps.readinessChecks]
  * @param {number} [deps.readinessCheckTimeoutMs]
  * @param {object} [deps.listingService] mounts /v1/listings when given (tests may omit it)
+ * @param {object} [deps.reviewService] mounts the human decision endpoint when given
  */
-export function createApp({ logger, readinessChecks = [], readinessCheckTimeoutMs = 2_000, listingService }) {
+export function createApp({
+  logger, readinessChecks = [], readinessCheckTimeoutMs = 2_000, listingService, reviewService,
+}) {
   const app = express();
   app.disable('x-powered-by');
 
@@ -25,7 +28,7 @@ export function createApp({ logger, readinessChecks = [], readinessCheckTimeoutM
 
   app.use(createHealthRouter({ readinessChecks, checkTimeoutMs: readinessCheckTimeoutMs, logger }));
 
-  if (listingService) app.use(createListingsRouter({ listingService }));
+  if (listingService) app.use(createListingsRouter({ listingService, reviewService }));
 
   app.use(notFoundHandler);
   app.use(createErrorHandler(logger));

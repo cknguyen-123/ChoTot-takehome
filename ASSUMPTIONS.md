@@ -394,3 +394,39 @@ A bounded retry strategy may stop retrying a job that could eventually succeed. 
 **Rationale:** It is what the rule says, and "free" is a common bait pattern, so human review of free items is defensible. Exempting 0 would be an exception the brief never mentions.
 
 **Cost of being wrong:** Every free / give-away listing from a seller without R4 trust waits for a moderator, adding review load. Exempting 0 is a one-line change in R2.
+
+---
+
+## A23 — What a human decision stores
+
+**Ambiguity:** `openapi.yaml` says the `Decision` "represents the current phase's committed result. A human resolution may replace the automated escalation outcome … No additional phase field or history endpoint is required." It does not say what `reasons` contains after a human decides, or whether the escalation reasons survive.
+
+**Decision:** The human result replaces the decision with `{"outcome": "approved" | "rejected", "reasons": [{"rule_id": "HUMAN", "message": "approved by moderator m-1: <note>", "detail": {"moderator_id", "note", "escalation_reasons": [...]}}]}`. `escalation_reasons` are the R2/R5 reasons that sent the listing to review, copied from the replaced decision in the same `UPDATE`. `decided_at` becomes the time of the human decision, and `decided_by` (stored, not in the API response) the `moderator_id`.
+
+**Rationale:** The `HUMAN` reason is what decided the outcome, consistent with A18 (only deciding reasons are reported). Keeping the escalation reasons in `detail` means "why was this reviewed?" is never lost, without inventing a history endpoint the spec says is not required.
+
+**Cost of being wrong:** A client that expects `reasons` to keep the original R2/R5 entries at the top level finds them only in `detail`. A full audit trail (several decisions over time) would need a separate history table (ARCHITECTURE.md §9).
+
+---
+
+## A24 — Validating a moderator's decision request
+
+**Ambiguity:** The decision body in `openapi.yaml` requires `decision` (`approve` | `reject`) and `moderator_id`, with an optional `note`, but gives no length limits and no rule for extra fields.
+
+**Decision:** The same strictness as `POST /v1/listings` (A13, A14): unknown fields → `400`, no type coercion (`note: null` is a `400`, omit it instead), `decision` exactly `approve` or `reject`, `moderator_id` a string of 1–200 characters, `note` at most 5000 characters. Text is stored as sent (A15). `moderator_id` is trusted as sent; there is no authentication (README, Known limitations).
+
+**Rationale:** One set of validation rules across the API is easier to explain and to use. The limits match the ones the spec gives for listings and keep request sizes bounded.
+
+**Cost of being wrong:** A moderation tool that sends extra fields or `"note": null` gets `400` and has to change its request. Relaxing either is a small validator change.
+
+---
+
+## A25 — Which error wins on a decision request
+
+**Ambiguity:** `POST /v1/listings/{id}/decision` can fail with 400 (invalid body), 404 (no such listing) or 409 (not awaiting review), and the spec does not order them.
+
+**Decision:** 400 → 404 → 409. The body is validated first; then, if no row changed, the listing is looked up: missing (or a malformed id) → `404`, any status other than `needs_human` → `409`. A repeat of the winning request is a `409`, as the spec says.
+
+**Rationale:** Checks that need no database come first, as in A16, and a malformed request does not reveal whether a listing exists. 404 before 409 because "not awaiting review" only makes sense for a listing that exists.
+
+**Cost of being wrong:** A client sending an invalid body for a missing listing gets `400` instead of `404`. Nothing incorrect is stored in any order.

@@ -3,10 +3,19 @@
 
 import { Router } from 'express';
 import { AppError } from '../http/errors.js';
-import { validateIdempotencyKey, validateListingRequest, validateListQuery } from '../http/validation.js';
+import {
+  validateDecisionRequest,
+  validateIdempotencyKey,
+  validateListingRequest,
+  validateListQuery,
+} from '../http/validation.js';
 
-/** @param {{listingService: ReturnType<import('../services/listings.js').createListingService>}} deps */
-export function createListingsRouter({ listingService }) {
+/**
+ * @param {object} deps
+ * @param {ReturnType<import('../services/listings.js').createListingService>} deps.listingService
+ * @param {ReturnType<import('../services/review.js').createReviewService>} [deps.reviewService]
+ */
+export function createListingsRouter({ listingService, reviewService }) {
   const router = Router();
 
   router.post('/v1/listings', async (req, res) => {
@@ -27,6 +36,14 @@ export function createListingsRouter({ listingService }) {
     if (!listing) throw new AppError(404, 'not_found', `Listing ${req.params.id} not found`);
     res.json(listing);
   });
+
+  if (reviewService) {
+    // Human resolution: 200 for the single winning request, 409 otherwise (A25).
+    router.post('/v1/listings/:id/decision', async (req, res) => {
+      const request = validateDecisionRequest(req.body);
+      res.json(await reviewService.decide(req.params.id, request));
+    });
+  }
 
   return router;
 }

@@ -58,6 +58,7 @@ The agent listed five gaps in the brief with a recommendation each; I decided
 | A9 | `draft` in the diagram but not the enum | Client-side state, never stored | Agreed |
 | A10 | When `auto_approved` becomes `published` | Same transaction as the approval | Agreed |
 | A11 | What triggers `expired` | Out of scope, nothing sets it | Agreed |
+| A23–A25 | Human decisions: stored shape, validation, error order | HUMAN reason keeping escalation reasons; same strictness as submissions; 400 → 404 → 409 | Agreed |
 | **A12** | **Should `hàng giả` match the banned term `hang gia`?** | **Yes — strip diacritics before matching** | **Disagreed: no folding, match the seed term as written** |
 
 **Where I disagreed (A12).** The model argued that Vietnamese sellers type both

@@ -11,6 +11,7 @@ import { createPool } from './db/pool.js';
 import { createLogger } from './logger.js';
 import { loadSeed } from './reference/seed.js';
 import { createListingService } from './services/listings.js';
+import { createReviewService } from './services/review.js';
 
 const bootLogger = createLogger();
 
@@ -61,6 +62,7 @@ async function start() {
     readinessChecks,
     readinessCheckTimeoutMs: config.readinessCheckTimeoutMs,
     listingService,
+    reviewService: createReviewService({ pool, logger }),
   });
 
   server = app.listen(config.port, () => logger.info('listening', { port: config.port }));

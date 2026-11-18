@@ -4,9 +4,9 @@ An HTTP service that accepts classified listings, moderates them asynchronously
 against rules R1–R5, and lets a human moderator resolve listings that need review.
 Node.js 24 + Express 5, PostgreSQL 17, Docker Compose.
 
-> **Status:** Phase 5 (worker). Listings are submitted, moderated by a background worker
-> within about a second, and fetched with their decision and reasons. The human
-> decision endpoint comes in Phase 6. The `/v1/listings` endpoints come
+> **Status:** all endpoints in `openapi.yaml` are implemented. Listings are submitted,
+> moderated by a background worker within about a second, and listings escalated to
+> `needs_human` are resolved by a moderator through the decision endpoint. The `/v1/listings` endpoints come
 > in later phases; see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## Prerequisites
@@ -36,7 +36,7 @@ With `make run` going, in a second terminal (Git Bash on Windows):
 
 ```sh
 # Submit: 202 {"id": "...", "status": "pending"}
-curl -i -X POST localhost:8080/v1/listings   -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-001'   -d '{"seller_id":"s-1002","category_id":"c-phones","title":"iPhone 13 128GB","description":"Used, good condition","price_vnd":12000000}'
+curl -i -X POST localhost:8080/v1/listings -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-001' -d '{"seller_id":"s-1002","category_id":"c-phones","title":"iPhone 13 128GB","description":"Used, good condition","price_vnd":12000000}'
 
 # Same command again: 200 with the same id (idempotent replay)
 # Same key, different body (e.g. another price): 409 idempotency_key_reused
@@ -45,7 +45,15 @@ curl -i -X POST localhost:8080/v1/listings   -H 'Content-Type: application/json'
 # needs_human, with decision.outcome and decision.reasons explaining why.
 # Fetch one, and list a seller's listings (newest first)
 curl -s localhost:8080/v1/listings/<id>
-curl -s 'localhost:8080/v1/listings?seller_id=s-1002&status=pending&limit=5'
+curl -s 'localhost:8080/v1/listings?seller_id=s-1002&limit=5'
+curl -s 'localhost:8080/v1/listings?status=needs_human'
+```
+
+A listing that needs review (e.g. from unverified seller `s-1008`) ends in `needs_human`.
+A moderator resolves it; exactly one decision wins, later ones get `409`:
+
+```sh
+curl -s -X POST localhost:8080/v1/listings/<id>/decision -H 'Content-Type: application/json' -d '{"decision":"approve","moderator_id":"m-1","note":"verified by phone"}'
 ```
 
 `POST /v1/listings` requires an `Idempotency-Key` header (A8) and rejects fields the
@@ -86,13 +94,11 @@ any test fails. Each run uses its own Compose project, so it never touches a run
 
 ## Known limitations
 
-- Human decisions (`POST /v1/listings/{id}/decision`) are not implemented yet, so
-  `needs_human` listings stay there.
 - `POST /v1/listings` requires an `Idempotency-Key` header (A8).
 - Nothing moves listings to `expired` (A11).
 - R1 matches banned terms as written: `hàng giả` (with accents) is not caught by
   `hang gia` (A12).
-- Moderator identity (`moderator_id`) will be trusted as sent; there is no
+- Moderator identity (`moderator_id`) is trusted as sent; there is no
   authentication.
 - Failed moderation jobs are visible by querying the database, not through an API
   (A7, ARCHITECTURE.md §6.1). With `make run` going:

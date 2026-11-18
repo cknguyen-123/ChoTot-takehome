@@ -77,6 +77,30 @@ export function validateListingRequest(body) {
   return { sellerId, title, description, priceVnd, categoryId };
 }
 
+const DECISION_FIELDS = ['decision', 'moderator_id', 'note'];
+const MODERATOR_ID_MAX = 200;
+const NOTE_MAX = 5000;
+
+/** POST /v1/listings/{id}/decision body (A24). Returns camelCase fields. */
+export function validateDecisionRequest(body) {
+  if (!isPlainObject(body)) throw invalid('Request body must be a JSON object');
+
+  const unknown = Object.keys(body).filter((k) => !DECISION_FIELDS.includes(k));
+  if (unknown.length) throw invalid(`Unknown field(s): ${unknown.join(', ')}`);
+
+  const { decision, moderator_id: moderatorId, note } = body;
+  if (decision !== 'approve' && decision !== 'reject') {
+    throw invalid('decision must be "approve" or "reject"');
+  }
+  if (typeof moderatorId !== 'string' || charLength(moderatorId) < 1 || charLength(moderatorId) > MODERATOR_ID_MAX) {
+    throw invalid(`moderator_id must be a string of 1-${MODERATOR_ID_MAX} characters`);
+  }
+  if (note !== undefined && (typeof note !== 'string' || charLength(note) > NOTE_MAX)) {
+    throw invalid(`note must be a string of at most ${NOTE_MAX} characters (omit it if there is none)`);
+  }
+  return { decision, moderatorId, note };
+}
+
 // A repeated query parameter (?status=a&status=b) arrives as an array.
 function singleQueryValue(query, name) {
   const value = query[name];
