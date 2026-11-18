@@ -23,7 +23,9 @@ against rules R1–R5, and lets a human moderator resolve listings that need rev
   `src/server.js` is the process entry point, `src/config.js` reads env once,
   `src/http/` holds error and health handlers, `src/db/` the pool, migrations
   (node-pg-migrate, plain SQL up/down files) and DB readiness checks,
-  `src/repositories/` all SQL, `src/reference/` the seed loader, `scripts/` the `make` helpers.
+  `src/repositories/` all SQL, `src/reference/` the seed loader, `src/rules/` +
+  `src/moderation/decide.js` the pure rules, `src/services/` use cases, `src/worker.js` +
+  `src/worker/loop.js` the worker process, `scripts/` the `make` helpers.
   `ARCHITECTURE.md` and `ASSUMPTIONS.md` sit at the repo root (brief §4 lists them
   there); `docs/` holds only the plan and context notes.
 
@@ -231,11 +233,20 @@ Do not duplicate content across files; link instead.
 - `pg` returns `bigint` as a string. Our pool parses it to a number (safe because
   `price_vnd` is capped at `Number.MAX_SAFE_INTEGER` in validation — Phase 3 must do that).
 - **(Phase 4, real)** A test meant to prove Unicode boundaries used `'fakế'`, which does
-  not contain "fake" at all, so it passed with the naive `` too. Caught by running the
+  not contain "fake" at all, so it passed with the naive `\b` too. Caught by running the
   naive pattern against the test inputs. Rule: for a boundary test, check that the
   *wrong* implementation fails it.
 - Only the rules that decided the outcome go in `reasons` (A18); do not add overridden
   rules "for completeness".
+- **(Phase 5, real)** The original R3 design (lock per seller + "earlier `created_at`
+  wins") still allowed two identical listings to both be published: `created_at` is the
+  transaction *start*, so a listing can be older but become visible after the newer one
+  was already decided. Fix: already-decided active duplicates always count (A4
+  refinement). Do not "simplify" the duplicate query back to a `created_at` comparison.
+- Every job write after a claim must carry `WHERE attempts = <claim's attempt> AND
+  state = 'running'` (fencing). Without it a stale worker can reset a reclaimed job.
+- Concurrency tests that pass are not proof: remove the lock or guard and check that a
+  test fails (done for the seller lock and the `status = 'pending'` guard in Phase 5).
 - _(add real incidents here as they happen, with one line on the fix)_
 
 ## 11. How to work with the user

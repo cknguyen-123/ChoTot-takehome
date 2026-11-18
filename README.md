@@ -4,8 +4,9 @@ An HTTP service that accepts classified listings, moderates them asynchronously
 against rules R1–R5, and lets a human moderator resolve listings that need review.
 Node.js 24 + Express 5, PostgreSQL 17, Docker Compose.
 
-> **Status:** Phase 3 (listing endpoints). Listings can be submitted, fetched and
-> listed. They stay `pending` until the moderation worker exists (Phase 5). The `/v1/listings` endpoints come
+> **Status:** Phase 5 (worker). Listings are submitted, moderated by a background worker
+> within about a second, and fetched with their decision and reasons. The human
+> decision endpoint comes in Phase 6. The `/v1/listings` endpoints come
 > in later phases; see [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## Prerequisites
@@ -20,7 +21,7 @@ make run              # API on http://localhost:8080
 PORT=8081 make run    # API on http://localhost:8081
 ```
 
-`make run` builds the images, starts PostgreSQL and the API in the foreground, and
+`make run` builds the images, starts PostgreSQL, the API and the moderation worker in the foreground, and
 stops and removes the containers on Ctrl-C. Data is kept in a Docker volume between
 runs; `make clean` deletes it.
 
@@ -40,6 +41,8 @@ curl -i -X POST localhost:8080/v1/listings   -H 'Content-Type: application/json'
 # Same command again: 200 with the same id (idempotent replay)
 # Same key, different body (e.g. another price): 409 idempotency_key_reused
 
+# About a second later the worker has decided it: status published / auto_rejected /
+# needs_human, with decision.outcome and decision.reasons explaining why.
 # Fetch one, and list a seller's listings (newest first)
 curl -s localhost:8080/v1/listings/<id>
 curl -s 'localhost:8080/v1/listings?seller_id=s-1002&status=pending&limit=5'
@@ -83,8 +86,8 @@ any test fails. Each run uses its own Compose project, so it never touches a run
 
 ## Known limitations
 
-- Moderation rules, the worker and human decisions are not implemented yet, so
-  listings stay `pending`.
+- Human decisions (`POST /v1/listings/{id}/decision`) are not implemented yet, so
+  `needs_human` listings stay there.
 - `POST /v1/listings` requires an `Idempotency-Key` header (A8).
 - Nothing moves listings to `expired` (A11).
 - R1 matches banned terms as written: `hàng giả` (with accents) is not caught by
@@ -92,4 +95,11 @@ any test fails. Each run uses its own Compose project, so it never touches a run
 - Moderator identity (`moderator_id`) will be trusted as sent; there is no
   authentication.
 - Failed moderation jobs are visible by querying the database, not through an API
-  (see ARCHITECTURE.md §6.1).
+  (A7, ARCHITECTURE.md §6.1). With `make run` going:
+
+  ```sh
+  docker compose -p listing-moderation-8080 exec db psql -U moderation -c     "SELECT listing_id, attempts, last_error, updated_at FROM moderation_jobs WHERE state = 'failed'"
+  ```
+
+  To retry one after fixing the cause:
+  `UPDATE moderation_jobs SET state = 'queued', attempts = 0, run_after = now() WHERE listing_id = '<id>' AND state = 'failed';`

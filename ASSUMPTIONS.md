@@ -114,6 +114,12 @@ The tie-break is needed because two identical listings can be evaluated at the s
 
 If only published listings should count as active, a seller whose first listing is still pending or in human review will see the second one rejected rather than both going through moderation. If the first listing is later rejected, the seller has to resubmit the second.
 
+**Refinement (Phase 5): "earlier" means decided first, then submitted first.** While building the worker we found that `created_at` alone cannot be the tie-break. `created_at` is set when a submission's transaction *starts*, but the listing only becomes visible when it *commits*. Listing B can therefore have the earlier `created_at` yet appear only after listing A has already been checked and published. Under a pure `created_at` rule, B would then ignore A ("A is later") and be published too: two identical active listings. The rule is therefore:
+
+> A listing is a duplicate if the same seller has an identical active listing that is **already decided** (`needs_human`, `published`, `auto_approved`), or that is **still pending and was submitted earlier** (`created_at`, then `id`).
+
+R3 checks and commits for the same seller run one at a time under a per-seller lock (ARCHITECTURE.md §5.2), so the "already decided" set is always up to date. Two identical listings can still never both be published, and never both rejected by R3. The rare cost: in the race above, the listing with the earlier `created_at` is the one rejected, i.e. "first decided wins" rather than "first submitted wins".
+
 ---
 
 

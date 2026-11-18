@@ -33,6 +33,20 @@ How AI tools were used on this take-home. Written as the work happens, not after
   the naive pattern does match. Rule added to AGENTS.md: check that the *wrong*
   implementation fails a boundary test.
 
+- **A race in the model's own design (Phase 5).** ARCHITECTURE.md said a per-seller
+  lock plus "the earlier `created_at` wins" (A4) prevents two identical listings from
+  both being published. While implementing it, the model noticed this is not enough:
+  `created_at` is when a transaction *starts*, so a listing can be older but become
+  visible only after the newer one was already published, and then both would be
+  published. Fixed by counting already-decided duplicates first (A4 refinement). Then
+  it checked that the tests actually guard this: it removed the lock and the
+  `status = 'pending'` guard one at a time and confirmed a test fails each time. The
+  first version of the tests passed *without* the lock; a deterministic test that holds
+  the lock open was added.
+- **Smaller one, same phase:** the worker's stop() first woke only one of its two
+  sleeping loops (a single shared callback). Caught on reading the code back, before
+  any test ran.
+
 ## Decisions I took on the model's recommendations
 
 The agent listed five gaps in the brief with a recommendation each; I decided

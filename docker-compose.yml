@@ -35,6 +35,22 @@ services:
       db:
         condition: service_healthy
 
+  # Moderation worker: same image as the API, different entry point. Several
+  # replicas are safe (`docker compose up --scale worker=3`); all coordination
+  # is in Postgres (ARCHITECTURE.md §8).
+  worker:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "src/worker.js"]
+    init: true
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://moderation:moderation@db:5432/moderation
+    depends_on:
+      db:
+        condition: service_healthy
+
   test:
     profiles: ["test"]
     build:

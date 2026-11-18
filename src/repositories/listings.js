@@ -61,6 +61,62 @@ export async function findListingById(pool, id) {
   return rows[0] ?? null;
 }
 
+const ACTIVE_STATUSES = ['pending', 'auto_approved', 'needs_human', 'published']; // A4
+
+/** Listing as the worker needs it, including the R3 dedup key. */
+export async function findListingForModeration(client, id) {
+  const { rows } = await client.query(
+    `SELECT ${LISTING_COLUMNS}, dedup_key FROM listings WHERE id = $1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Takes a transaction-scoped lock for one seller, so R3 checks and commits for
+ * the same seller run one at a time. Released automatically at COMMIT/ROLLBACK.
+ * (Two-key form: namespace 1 = "R3 per seller", then a hash of the seller id.)
+ */
+export async function lockSellerForDuplicateCheck(client, sellerId) {
+  await client.query('SELECT pg_advisory_xact_lock(1, hashtext($1))', [sellerId]);
+}
+
+/**
+ * The active listings this one counts as a duplicate of (A3, A4 as refined):
+ * same seller and dedup key, active, and either
+ *   - already decided (needs_human / published / auto_approved): it got there first, or
+ *   - still pending but submitted earlier (created_at, then id).
+ * Must be called while holding lockSellerForDuplicateCheck.
+ * @returns {Promise<Array<{id: string, status: string}>>} original first
+ */
+export async function findEarlierActiveDuplicates(client, listing) {
+  const { rows } = await client.query(
+    `SELECT id, status FROM listings
+      WHERE seller_id = $1 AND dedup_key = $2 AND id <> $3
+        AND status = ANY($5::text[])
+        AND (status <> 'pending' OR (created_at, id) < ($4, $3))
+      ORDER BY (status = 'pending'), created_at, id`,
+    [listing.seller_id, listing.dedup_key, listing.id, listing.created_at, ACTIVE_STATUSES],
+  );
+  return rows;
+}
+
+/**
+ * Commits the one automated result. Status and decision are written in the
+ * same statement, and only if the listing is still pending: a stale or
+ * duplicate attempt, or one racing a human decision, matches 0 rows and must
+ * discard its result (AGENTS.md §6.2, §6.3).
+ * @returns {Promise<boolean>} true if this call committed the result
+ */
+export async function commitAutomatedDecision(client, { id, status, decision }) {
+  const { rowCount } = await client.query(
+    `UPDATE listings SET status = $2, decision = $3, decided_at = now()
+      WHERE id = $1 AND status = 'pending'`,
+    [id, status, JSON.stringify(decision)],
+  );
+  return rowCount === 1;
+}
+
 /**
  * Newest first; optional filters. `limit` is validated by the caller (1–100).
  * Ties on created_at are broken by id so the order is stable.

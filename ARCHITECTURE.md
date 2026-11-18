@@ -135,22 +135,39 @@ The key comes from the required `Idempotency-Key` header; a request without it g
 `400` (A8).
 
 ### 5.2 Automated moderation — worker
-1. **Claim:** in a short transaction, select one job where
-   `state='queued' AND run_after <= now()`, or `state='running' AND lease_until < now()`
-   (crashed worker), `FOR UPDATE SKIP LOCKED`; set `state='running'`,
-   `lease_until = now() + lease`, `attempts = attempts + 1`.
-2. **Evaluate:** load the listing (skip if no longer `pending`), seller, category median
-   and the seller's other active listings; run rules; `decide` → outcome + reasons.
-3. **Commit:** in one transaction:
-   - Take `pg_advisory_xact_lock(seller_id)` so R3 checks for the same seller are
-     serialised (two identical listings cannot approve each other or reject each other;
-     tie-break per A4).
-   - `UPDATE listings SET status=…, decision=…, decided_at=now()
-      WHERE id=$1 AND status='pending'`.
-   - Mark the job `done` whether the update matched 1 row (we won) or 0 rows (another
-     attempt already committed; our result is discarded).
-4. **Failure before commit:** set `state='queued'`, `run_after = now() + backoff`,
-   store `last_error`. After `MAX_ATTEMPTS`, set `state='failed'` (see §6).
+
+Code: `src/worker.js` (process), `src/worker/loop.js` (polling loop),
+`src/services/moderation.js` (one job), `src/repositories/jobs.js` (queue SQL).
+
+1. **Claim** (one statement): pick one job that is `queued` with `run_after <= now()`,
+   or `running` with `lease_until < now()` (its worker crashed), using
+   `FOR UPDATE SKIP LOCKED` so concurrent workers never take the same row; set
+   `state='running'`, `lease_until = now() + JOB_LEASE_MS`, `attempts = attempts + 1`.
+   The new `attempts` value is the claim's **fencing token**: every later job write is
+   `WHERE attempts = <mine> AND state = 'running'`, so a worker whose claim was taken
+   over cannot change the job any more.
+2. **Evaluate and commit**, in **one transaction**:
+   - Load the listing; if it is no longer `pending`, mark the job done and stop.
+   - Take `pg_advisory_xact_lock(1, hashtext(seller_id))`: R3 checks and commits for
+     one seller run one at a time (released at COMMIT).
+   - Load the seller's identical active listings that were already decided, or are
+     pending and older (A4 refinement), then run `decide()` (pure).
+   - `UPDATE listings SET status, decision, decided_at WHERE id = $1 AND status = 'pending'`.
+     0 rows → another attempt or a moderator committed first; our result is discarded.
+   - Mark the job `done`.
+3. **Failure** (any error before COMMIT, which rolls everything back): attempt n is
+   retried after `JOB_BACKOFF_BASE_MS × 2^(n-1)` (2, 4, 8, 16 s by default, capped at
+   `JOB_BACKOFF_MAX_MS`). After `JOB_MAX_ATTEMPTS` (5) the job becomes `failed` with
+   `last_error`. A crash during the last attempt also ends in `failed` instead of a
+   sixth evaluation.
+4. **Polling:** an idle loop asks again every `WORKER_POLL_INTERVAL_MS` (500 ms).
+   `WORKER_CONCURRENCY` (2) loops run per process. On SIGTERM the worker stops claiming,
+   finishes in-flight jobs and exits; a job cut off by a hard kill is reclaimed when its
+   lease (30 s) expires.
+
+Evaluating a listing takes milliseconds, so the lease is never renewed: a job still
+running after 30 s is treated as abandoned. If it was only slow, the fencing token and
+the `status='pending'` guard make its late result harmless.
 
 ### 5.3 Human resolution — `POST /v1/listings/{id}/decision`
 `UPDATE listings SET status = published|rejected, decision = …, decided_at = now(),
@@ -171,6 +188,7 @@ Plain reads. `decision` is `null` while `pending`. The list endpoint filters by
 | Stale attempt never overwrites a result or a human decision | Same guard: once status left `pending`, no automated write can match |
 | One winner among concurrent human decisions | `UPDATE … WHERE status='needs_human'` |
 | Accepted work is not left unprocessed | Job written in the same transaction as the listing; lease expiry re-queues crashed claims; bounded retries with backoff |
+| Two identical listings never both published, never both rejected (R3) | Per-seller advisory lock around check + commit; "decided first, then submitted first" tie-break (A4 refinement) |
 | Failures reach an operator | Jobs end in `failed` with `last_error` and are logged at error level. In the current scope an operator finds them by querying `moderation_jobs` directly (A7). An admin API is deferred (§6.1). |
 | Decisions are explainable | Each rule that decided the outcome adds a `Reason {rule_id, message, detail}` (A18); R1's message quotes the seed term (A20); approvals carry an R4 or `PASS` reason (A19) |
 

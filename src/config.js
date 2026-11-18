@@ -36,5 +36,20 @@ export function loadConfig(env = process.env) {
     // Node directly against a local Postgres.
     databaseUrl: env.DATABASE_URL || 'postgres://moderation:moderation@localhost:5432/moderation',
     dbPoolMax: readInt(env, 'DB_POOL_MAX', 10, { min: 1, max: 100 }),
+
+    // Worker (ARCHITECTURE.md §5.2, ASSUMPTIONS A7).
+    worker: Object.freeze({
+      // Jobs processed at once by one worker process.
+      concurrency: readInt(env, 'WORKER_CONCURRENCY', 2, { min: 1, max: 32 }),
+      // How long an idle worker waits before asking for jobs again.
+      pollIntervalMs: readInt(env, 'WORKER_POLL_INTERVAL_MS', 500, { min: 10, max: 60_000 }),
+      // A claimed job is reclaimable by another worker after this long (crash recovery).
+      leaseMs: readInt(env, 'JOB_LEASE_MS', 30_000, { min: 100, max: 3_600_000 }),
+      // Attempts before a job is marked failed.
+      maxAttempts: readInt(env, 'JOB_MAX_ATTEMPTS', 5, { min: 1, max: 100 }),
+      // Retry delay after attempt n fails: base × 2^(n-1), capped (2 s, 4 s, 8 s, 16 s …).
+      backoffBaseMs: readInt(env, 'JOB_BACKOFF_BASE_MS', 2_000, { min: 0, max: 600_000 }),
+      backoffMaxMs: readInt(env, 'JOB_BACKOFF_MAX_MS', 60_000, { min: 0, max: 3_600_000 }),
+    }),
   });
 }

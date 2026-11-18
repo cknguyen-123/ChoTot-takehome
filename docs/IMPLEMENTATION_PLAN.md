@@ -74,11 +74,17 @@ model's recommendation, see AI-NOTES.md). Verified: `make test` → 136/136 pass
 
 ## Phase 5: Background Processing
 
-- [ ] Task 5.1: Design moderation job lifecycle
-- [ ] Task 5.2: Implement job persistence
-- [ ] Task 5.3: Implement background worker
-- [ ] Task 5.4: Handle processing failures
-- [ ] Task 5.5: Test asynchronous processing
+Settings as proposed (5 attempts, 2/4/8/16 s backoff, 30 s lease, 500 ms polling,
+concurrency 2; failed jobs visible via SQL per A7). A4 refined (decided first wins).
+Verified: `make test` → 164/164 pass; removing the seller lock or the
+`status = 'pending'` guard makes a test fail; `make run`'s stack decided four `curl`
+submissions (PASS, R1, R5, R3) within a second.
+
+- [x] Task 5.1: Design moderation job lifecycle — queued → running (lease, fencing by `attempts`) → done | queued (retry) | failed
+- [x] Task 5.2: Implement job persistence — `src/repositories/jobs.js` (claim with `SKIP LOCKED`, complete, reschedule, fail)
+- [x] Task 5.3: Implement background worker — `src/worker.js`, `src/worker/loop.js`, `worker` service in compose
+- [x] Task 5.4: Handle processing failures — backoff, `failed` + `last_error`, crash on last attempt, graceful stop
+- [x] Task 5.5: Test asynchronous processing — `test/worker.test.js` (races, crash, stale vs human, retries, R3 concurrency)
 
 ## Phase 6: Human Review
 
